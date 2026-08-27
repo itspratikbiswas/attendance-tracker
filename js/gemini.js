@@ -232,7 +232,7 @@ Do not output markdown codeblocks if possible, or only pure JSON array.
       }
     };
 
-    const candidateModels = await this.discoverAvailableModels(key);
+    const candidateModels = (await this.discoverAvailableModels(key)).slice(0, 2);
     let lastError = null;
 
     for (const model of candidateModels) {
@@ -242,11 +242,16 @@ Do not output markdown codeblocks if possible, or only pure JSON array.
             ? `https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent`
             : `https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${key}`;
 
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 8000);
+
           const response = await fetch(endpoint, {
             method: 'POST',
             headers: this.getAuthHeaders(key),
-            body: JSON.stringify(requestBody)
+            body: JSON.stringify(requestBody),
+            signal: controller.signal
           });
+          clearTimeout(timeoutId);
 
           if (!response.ok) {
             const errJson = await response.json().catch(() => ({}));
