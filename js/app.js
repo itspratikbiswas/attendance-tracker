@@ -91,6 +91,27 @@ class AttendanceApp {
     if (avatarEl) avatarEl.src = user.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.username}`;
   }
 
+  showLogin() {
+    document.getElementById('auth-signup-box')?.classList.add('hidden');
+    document.getElementById('auth-forgot-box')?.classList.add('hidden');
+    document.getElementById('auth-login-box')?.classList.remove('hidden');
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  showSignUp() {
+    document.getElementById('auth-login-box')?.classList.add('hidden');
+    document.getElementById('auth-forgot-box')?.classList.add('hidden');
+    document.getElementById('auth-signup-box')?.classList.remove('hidden');
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  showForgotPassword() {
+    document.getElementById('auth-login-box')?.classList.add('hidden');
+    document.getElementById('auth-signup-box')?.classList.add('hidden');
+    document.getElementById('auth-forgot-box')?.classList.remove('hidden');
+    if (window.lucide) window.lucide.createIcons();
+  }
+
   renderAllViews() {
     this.renderDashboard();
     this.renderTodaySchedule();

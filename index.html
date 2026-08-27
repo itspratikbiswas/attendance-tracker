@@ -88,7 +88,7 @@
           <div>
             <div class="flex items-center justify-between mb-1.5">
               <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400">Password</label>
-              <button type="button" id="btn-show-forgot" class="text-xs text-indigo-400 hover:text-indigo-300 font-medium">Forgot Password?</button>
+              <button type="button" id="btn-show-forgot" onclick="app.showForgotPassword()" class="text-xs text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer underline">Forgot Password?</button>
             </div>
             <div class="relative">
               <i data-lucide="lock" class="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5"></i>
@@ -102,12 +102,16 @@
           </button>
         </form>
 
-        <div class="mt-4 pt-4 border-t border-slate-800/80 text-center">
+        <div class="mt-4 pt-4 border-t border-slate-800/80 text-center space-y-2">
           <p class="text-xs text-slate-400">
             Don't have an account? 
-            <button id="btn-show-signup" class="text-indigo-400 hover:text-indigo-300 font-semibold ml-1">Create Account</button>
+            <button id="btn-show-signup" onclick="app.showSignUp()" class="text-indigo-400 hover:text-indigo-300 font-semibold ml-1">Create Account</button>
           </p>
-          <div class="mt-4">
+          <p class="text-xs text-slate-400">
+            Forgot password? 
+            <button type="button" onclick="app.showForgotPassword()" class="text-indigo-400 hover:text-indigo-300 font-semibold ml-1">Reset Password</button>
+          </p>
+          <div class="mt-4 pt-2">
             <button type="button" onclick="app.loginDemoUser('usr_demo_101')" class="w-full py-2 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700/80 rounded-xl text-xs font-medium transition flex items-center justify-center gap-2">
               <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400"></i> Instant 1-Click Demo Login
             </button>
@@ -144,7 +148,7 @@
         </form>
 
         <div class="mt-4 pt-3 border-t border-slate-800/80 text-center">
-          <button id="btn-forgot-back-login" class="text-xs text-indigo-400 hover:text-indigo-300 font-semibold flex items-center justify-center gap-1 mx-auto">
+          <button id="btn-forgot-back-login" onclick="app.showLogin()" class="text-xs text-indigo-400 hover:text-indigo-300 font-semibold flex items-center justify-center gap-1 mx-auto cursor-pointer">
             <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i> Back to Sign In
           </button>
         </div>
@@ -189,7 +193,7 @@
         <div class="mt-4 pt-3 border-t border-slate-800/80 text-center">
           <p class="text-xs text-slate-400">
             Already registered? 
-            <button id="btn-show-login" class="text-indigo-400 hover:text-indigo-300 font-semibold ml-1">Sign In</button>
+            <button id="btn-show-login" onclick="app.showLogin()" class="text-indigo-400 hover:text-indigo-300 font-semibold ml-1">Sign In</button>
           </p>
         </div>
       </div>
