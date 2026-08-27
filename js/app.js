@@ -912,17 +912,37 @@ class AttendanceApp {
 
   async testGeminiKey() {
     const apiKey = document.getElementById('setting-gemini-api-key').value;
+    const statusBox = document.getElementById('gemini-test-status');
+
     if (!apiKey || apiKey.trim().length < 10) {
+      if (statusBox) {
+        statusBox.className = 'mt-2 text-xs p-2.5 rounded-xl border bg-rose-950/60 text-rose-300 border-rose-500/40 block';
+        statusBox.innerHTML = '<span class="font-semibold">⚠️ Please enter an API key first</span> (starts with AIzaSy... or AQ.Ab8RN...)';
+      }
       this.showToast('Please enter an API key to test.', 'error');
       return;
     }
 
+    if (statusBox) {
+      statusBox.className = 'mt-2 text-xs p-2.5 rounded-xl border bg-indigo-950/60 text-indigo-300 border-indigo-500/40 block';
+      statusBox.innerHTML = '<span class="inline-block animate-spin mr-1.5">⏳</span> Connecting to Google Gemini API...';
+    }
     this.showToast('Testing connection with Google Gemini...', 'info');
+
     try {
-      await this.ingestionService.testApiKey(apiKey.trim());
+      const result = await this.ingestionService.testApiKey(apiKey.trim());
+      const modelName = result?.model || 'Gemini 2.0 Flash';
+      if (statusBox) {
+        statusBox.className = 'mt-2 text-xs p-2.5 rounded-xl border bg-emerald-950/60 text-emerald-300 border-emerald-500/40 block';
+        statusBox.innerHTML = `✅ <b>Connected successfully!</b> Active Model: <span class="font-mono text-white">${modelName}</span>. Ready for routine image OCR!`;
+      }
       this.showToast('Gemini API key is valid & working perfectly!', 'success');
     } catch (err) {
       console.error(err);
+      if (statusBox) {
+        statusBox.className = 'mt-2 text-xs p-2.5 rounded-xl border bg-rose-950/60 text-rose-300 border-rose-500/40 block';
+        statusBox.innerHTML = `❌ <b>Connection Failed:</b> ${err.message}`;
+      }
       this.showToast('API Key Error: ' + err.message, 'error');
     }
   }
