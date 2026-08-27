@@ -15,7 +15,7 @@ class RoutineIngestionService {
    * Automatically discovers available generateContent models for user's specific key
    */
   async discoverAvailableModels(apiKey) {
-    const key = apiKey.trim();
+    const key = apiKey.replace(/["']/g, '').trim();
     const endpoints = [
       `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`,
       `https://generativelanguage.googleapis.com/v1/models?key=${key}`
@@ -23,7 +23,12 @@ class RoutineIngestionService {
 
     for (const ep of endpoints) {
       try {
-        const res = await fetch(ep);
+        const res = await fetch(ep, {
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': key
+          }
+        });
         if (res.ok) {
           const data = await res.json();
           if (data.models && Array.isArray(data.models)) {
@@ -31,7 +36,6 @@ class RoutineIngestionService {
               .filter(m => !m.supportedGenerationMethods || m.supportedGenerationMethods.includes('generateContent'))
               .map(m => m.name.replace(/^models\//, ''));
             if (valid.length > 0) {
-              // Prioritize flash/vision models
               const prioritized = valid.sort((a, b) => {
                 const getScore = (name) => {
                   if (name.includes('2.0-flash')) return 100;
@@ -60,9 +64,9 @@ class RoutineIngestionService {
    */
   async testApiKey(apiKey) {
     if (!apiKey || apiKey.trim().length < 10) {
-      throw new Error('Please enter a valid Gemini API key (starts with AIzaSy...)');
+      throw new Error('Please enter a valid Gemini API key from aistudio.google.com/apikey');
     }
-    const key = apiKey.trim();
+    const key = apiKey.replace(/["']/g, '').trim();
     const availableModels = await this.discoverAvailableModels(key);
     
     let lastError = null;
@@ -72,7 +76,10 @@ class RoutineIngestionService {
           const endpoint = `https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${key}`;
           const response = await fetch(endpoint, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': key
+            },
             body: JSON.stringify({
               contents: [{ role: 'user', parts: [{ text: 'Ping' }] }]
             })
@@ -84,7 +91,11 @@ class RoutineIngestionService {
             return { model: model, version: ver };
           } else {
             const errJson = await response.json().catch(() => ({}));
-            lastError = new Error(errJson.error?.message || `HTTP ${response.status}`);
+            let msg = errJson.error?.message || `HTTP ${response.status}`;
+            if (msg.includes('OAuth') || response.status === 401 || response.status === 403) {
+              msg = 'Invalid or restricted API Key. Make sure to copy your key directly from https://aistudio.google.com/apikey';
+            }
+            lastError = new Error(msg);
           }
         } catch (e) {
           lastError = e;
@@ -102,7 +113,7 @@ class RoutineIngestionService {
    */
   async processRoutineFile(file, apiKey = '', trackingMode = 'hour') {
     const fileType = file.name.split('.').pop().toLowerCase();
-    const cleanKey = apiKey ? apiKey.trim() : '';
+    const cleanKey = apiKey ? apiKey.replace(/["']/g, '').trim() : '';
     
     // If user provided a Gemini API Key, prioritize Multimodal Gemini API
     if (cleanKey && cleanKey.length > 10) {
@@ -154,6 +165,7 @@ class RoutineIngestionService {
    * Gemini Multimodal Call with Dynamic Model Discovery & Fallback
    */
   async parseWithGeminiAPI(file, apiKey, trackingMode) {
+    const key = apiKey.replace(/["']/g, '').trim();
     const base64Data = await this.fileToBase64(file);
     const mimeType = file.type || this.inferMimeType(file.name);
 
@@ -204,22 +216,29 @@ Do not output markdown codeblocks if possible, or only pure JSON array.
       }
     };
 
-    const candidateModels = await this.discoverAvailableModels(apiKey);
+    const candidateModels = await this.discoverAvailableModels(key);
     let lastError = null;
 
     for (const model of candidateModels) {
       for (const ver of ['v1beta', 'v1']) {
         try {
-          const endpoint = `https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${apiKey}`;
+          const endpoint = `https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${key}`;
           const response = await fetch(endpoint, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': key
+            },
             body: JSON.stringify(requestBody)
           });
 
           if (!response.ok) {
             const errJson = await response.json().catch(() => ({}));
-            throw new Error(errJson.error?.message || `Model ${model} returned HTTP ${response.status}`);
+            let msg = errJson.error?.message || `Model ${model} returned HTTP ${response.status}`;
+            if (msg.includes('OAuth') || response.status === 401 || response.status === 403) {
+              msg = 'Invalid or restricted API Key. Make sure to copy your key directly from https://aistudio.google.com/apikey';
+            }
+            throw new Error(msg);
           }
 
           const data = await response.json();
@@ -231,7 +250,6 @@ Do not output markdown codeblocks if possible, or only pure JSON array.
           this.activeModel = model;
           this.activeApiVersion = ver;
 
-          // Clean up code blocks if returned
           let cleanJson = rawContent.trim();
           if (cleanJson.startsWith('```json')) {
             cleanJson = cleanJson.replace(/^```json\s*/, '').replace(/\s*```$/, '');
@@ -239,7 +257,6 @@ Do not output markdown codeblocks if possible, or only pure JSON array.
             cleanJson = cleanJson.replace(/^```\s*/, '').replace(/\s*```$/, '');
           }
 
-          // Find JSON array in text if wrapped in other text
           const jsonMatch = cleanJson.match(/\[\s*\{[\s\S]*\}\s*\]/);
           if (jsonMatch) {
             cleanJson = jsonMatch[0];
