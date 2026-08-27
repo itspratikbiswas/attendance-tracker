@@ -730,9 +730,14 @@
       <div class="space-y-5 my-4">
         <!-- Gemini API Key -->
         <div>
-          <label class="block text-xs font-semibold text-slate-300 mb-1">Google Gemini API Key</label>
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-xs font-semibold text-slate-300">Google Gemini API Key</label>
+            <button type="button" onclick="app.testGeminiKey()" class="text-xs text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1">
+              <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400"></i> Test Connection
+            </button>
+          </div>
           <input type="password" id="setting-gemini-api-key" placeholder="AIzaSy..." class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white font-mono">
-          <p class="text-[11px] text-slate-500 mt-1">Used for OCR and multimodal timetable ingestion from images & PDF routines.</p>
+          <p class="text-[11px] text-slate-500 mt-1">Get your free key at <a href="https://aistudio.google.com/apikey" target="_blank" class="text-indigo-400 underline">aistudio.google.com/apikey</a> for AI routine OCR.</p>
         </div>
 
         <!-- Subjects Manager -->

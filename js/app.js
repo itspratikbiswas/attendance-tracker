@@ -910,6 +910,23 @@ class AttendanceApp {
     this.showToast('Settings & Cloud config saved!', 'success');
   }
 
+  async testGeminiKey() {
+    const apiKey = document.getElementById('setting-gemini-api-key').value;
+    if (!apiKey || apiKey.trim().length < 10) {
+      this.showToast('Please enter an API key to test.', 'error');
+      return;
+    }
+
+    this.showToast('Testing connection with Google Gemini...', 'info');
+    try {
+      await this.ingestionService.testApiKey(apiKey.trim());
+      this.showToast('Gemini API key is valid & working perfectly!', 'success');
+    } catch (err) {
+      console.error(err);
+      this.showToast('API Key Error: ' + err.message, 'error');
+    }
+  }
+
   async pushToCloud() {
     try {
       const supaUrl = document.getElementById('setting-supabase-url').value;

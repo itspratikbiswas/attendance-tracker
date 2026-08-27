@@ -7,7 +7,31 @@
 
 class RoutineIngestionService {
   constructor() {
-    this.geminiEndpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+    this.models = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+  }
+
+  /**
+   * Test API Key connection
+   */
+  async testApiKey(apiKey) {
+    if (!apiKey || apiKey.trim().length < 10) {
+      throw new Error('Please enter a valid Gemini API key (starts with AIzaSy...)');
+    }
+    const key = apiKey.trim();
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: 'Respond with OK if connected.' }] }]
+      })
+    });
+
+    if (!response.ok) {
+      const errJson = await response.json().catch(() => ({}));
+      throw new Error(errJson.error?.message || `Google API returned HTTP ${response.status}`);
+    }
+    return true;
   }
 
   /**
@@ -18,21 +42,26 @@ class RoutineIngestionService {
    */
   async processRoutineFile(file, apiKey = '', trackingMode = 'hour') {
     const fileType = file.name.split('.').pop().toLowerCase();
+    const cleanKey = apiKey ? apiKey.trim() : '';
     
     // If user provided a Gemini API Key, prioritize Multimodal Gemini API
-    if (apiKey && apiKey.trim().length > 10) {
+    if (cleanKey && cleanKey.length > 10) {
       try {
-        const geminiResult = await this.parseWithGeminiAPI(file, apiKey.trim(), trackingMode);
+        const geminiResult = await this.parseWithGeminiAPI(file, cleanKey, trackingMode);
         if (geminiResult && geminiResult.length > 0) {
           return {
             success: true,
-            source: 'Gemini 1.5 Flash AI',
+            source: 'Gemini AI Vision',
             routine: this.normalizeRoutine(geminiResult)
           };
         }
       } catch (err) {
-        console.warn('Gemini API call failed, falling back to local extractor:', err);
-        // Fall through to local fallback
+        console.error('Gemini API Error:', err);
+        // If it was an image/pdf where Gemini is primary, throw the actual error to user
+        if (['png', 'jpg', 'jpeg', 'webp'].includes(fileType)) {
+          throw new Error(`Gemini AI Error: ${err.message}. Please check your API key in Settings.`);
+        }
+        // Otherwise fall through for spreadsheets/docs
       }
     }
 
@@ -40,23 +69,23 @@ class RoutineIngestionService {
     try {
       if (fileType === 'csv' || fileType === 'xlsx' || fileType === 'xls') {
         const result = await this.parseSpreadsheet(file);
-        return { success: true, source: 'SheetJS Engine', routine: this.normalizeRoutine(result) };
+        return { success: true, source: 'SheetJS Spreadsheet Engine', routine: this.normalizeRoutine(result) };
       } else if (fileType === 'pdf') {
         const result = await this.parsePDF(file);
-        return { success: true, source: 'PDF.js Text Extractor', routine: this.normalizeRoutine(result) };
+        return { success: true, source: 'PDF.js Document Engine', routine: this.normalizeRoutine(result) };
       } else if (fileType === 'docx') {
         const result = await this.parseDocx(file);
-        return { success: true, source: 'Mammoth Document Parser', routine: this.normalizeRoutine(result) };
+        return { success: true, source: 'Mammoth Document Engine', routine: this.normalizeRoutine(result) };
       } else if (['png', 'jpg', 'jpeg', 'webp'].includes(fileType)) {
         // If image without API key, return smart sample template + prompt user for API key
         return {
           success: true,
-          source: 'AI Pattern Extractor (Demo Mode)',
+          source: 'Demo Schedule Pattern',
           routine: this.generateRealisticExtractedRoutine(),
-          notice: 'Note: To perform direct deep visual neural OCR on your timetable images, add your free Gemini API Key in Settings.'
+          notice: 'Note: To parse your custom timetable image using AI Vision, add your free Google Gemini API Key in Settings ⚙️.'
         };
       } else {
-        throw new Error(`Unsupported file type: .${fileType}`);
+        throw new Error(`Unsupported file format: .${fileType}`);
       }
     } catch (localErr) {
       console.error('Local extractor error:', localErr);
@@ -65,7 +94,7 @@ class RoutineIngestionService {
   }
 
   /**
-   * Gemini 1.5 Flash Multimodal Call
+   * Gemini Multimodal Call with Multi-Model Fallback
    */
   async parseWithGeminiAPI(file, apiKey, trackingMode) {
     const base64Data = await this.fileToBase64(file);
@@ -114,44 +143,60 @@ Do not output markdown codeblocks if possible, or only pure JSON array.
         }
       ],
       generationConfig: {
-        temperature: 0.1,
-        responseMimeType: 'application/json'
+        temperature: 0.1
       }
     };
 
-    const response = await fetch(`${this.geminiEndpoint}?key=${apiKey}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(requestBody)
-    });
+    let lastError = null;
+    const candidateModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
 
-    if (!response.ok) {
-      const errJson = await response.json().catch(() => ({}));
-      throw new Error(errJson.error?.message || `Gemini API returned status ${response.status}`);
+    for (const model of candidateModels) {
+      try {
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody)
+        });
+
+        if (!response.ok) {
+          const errJson = await response.json().catch(() => ({}));
+          throw new Error(errJson.error?.message || `Model ${model} returned HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!rawContent) {
+          throw new Error('Empty response received from AI model.');
+        }
+
+        // Clean up code blocks if returned
+        let cleanJson = rawContent.trim();
+        if (cleanJson.startsWith('```json')) {
+          cleanJson = cleanJson.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+        } else if (cleanJson.startsWith('```')) {
+          cleanJson = cleanJson.replace(/^```\s*/, '').replace(/\s*```$/, '');
+        }
+
+        // Find JSON array in text if wrapped in other text
+        const jsonMatch = cleanJson.match(/\[\s*\{[\s\S]*\}\s*\]/);
+        if (jsonMatch) {
+          cleanJson = jsonMatch[0];
+        }
+
+        const parsedArray = JSON.parse(cleanJson);
+        if (!Array.isArray(parsedArray)) {
+          throw new Error('Expected JSON array of routine items.');
+        }
+
+        return parsedArray;
+      } catch (err) {
+        console.warn(`Failed with model ${model}:`, err.message);
+        lastError = err;
+      }
     }
 
-    const data = await response.json();
-    const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!rawContent) {
-      throw new Error('Empty response received from Gemini.');
-    }
-
-    // Clean up code blocks if returned
-    let cleanJson = rawContent.trim();
-    if (cleanJson.startsWith('```json')) {
-      cleanJson = cleanJson.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-    } else if (cleanJson.startsWith('```')) {
-      cleanJson = cleanJson.replace(/^```\s*/, '').replace(/\s*```$/, '');
-    }
-
-    const parsedArray = JSON.parse(cleanJson);
-    if (!Array.isArray(parsedArray)) {
-      throw new Error('Expected JSON array of routine items.');
-    }
-
-    return parsedArray;
+    throw lastError || new Error('All Gemini models failed to process the image.');
   }
 
   /**
