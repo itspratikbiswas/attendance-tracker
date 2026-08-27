@@ -86,7 +86,7 @@ class RoutineIngestionService {
       throw new Error('Please enter a valid Gemini API key from aistudio.google.com/apikey');
     }
     const key = apiKey.replace(/["']/g, '').trim();
-    const availableModels = await this.discoverAvailableModels(key);
+    const availableModels = (await this.discoverAvailableModels(key)).slice(0, 2);
     
     let lastError = null;
     for (const model of availableModels) {
@@ -96,13 +96,18 @@ class RoutineIngestionService {
             ? `https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent`
             : `https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${key}`;
 
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 3500);
+
           const response = await fetch(endpoint, {
             method: 'POST',
             headers: this.getAuthHeaders(key),
             body: JSON.stringify({
               contents: [{ role: 'user', parts: [{ text: 'Ping' }] }]
-            })
+            }),
+            signal: controller.signal
           });
+          clearTimeout(timeoutId);
 
           if (response.ok) {
             this.activeModel = model;
