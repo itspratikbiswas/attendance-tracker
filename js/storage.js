@@ -433,6 +433,72 @@ class StorageService {
     if (!this.currentUser) return;
     this.seedDemoUserData(this.currentUser.id);
   }
+
+  // --- SUPABASE CLOUD BACKEND INTEGRATION ---
+  getSupabaseClient() {
+    const settings = this.getSettings();
+    if (!settings.supabaseUrl || !settings.supabaseAnonKey) {
+      return null;
+    }
+    if (window.supabase && typeof window.supabase.createClient === 'function') {
+      try {
+        return window.supabase.createClient(settings.supabaseUrl, settings.supabaseAnonKey);
+      } catch (e) {
+        console.error('Supabase initialization failed:', e);
+        return null;
+      }
+    }
+    return null;
+  }
+
+  async syncToSupabaseCloud() {
+    const client = this.getSupabaseClient();
+    if (!client || !this.currentUser) {
+      throw new Error('Supabase URL and Anon Key must be configured in Settings.');
+    }
+
+    const userData = this.getUserData();
+    const payload = {
+      user_id: this.currentUser.id,
+      user_email: this.currentUser.email,
+      user_name: this.currentUser.name,
+      user_data: userData,
+      updated_at: new Date().toISOString()
+    };
+
+    // Upsert into omniattend_cloud_store
+    const { data, error } = await client
+      .from('omniattend_user_sync')
+      .upsert([payload], { onConflict: 'user_id' });
+
+    if (error) {
+      throw new Error('Cloud sync failed: ' + error.message);
+    }
+    return true;
+  }
+
+  async syncFromSupabaseCloud() {
+    const client = this.getSupabaseClient();
+    if (!client || !this.currentUser) {
+      throw new Error('Supabase URL and Anon Key must be configured in Settings.');
+    }
+
+    const { data, error } = await client
+      .from('omniattend_user_sync')
+      .select('*')
+      .eq('user_id', this.currentUser.id)
+      .single();
+
+    if (error) {
+      throw new Error('Cloud pull failed: ' + error.message);
+    }
+
+    if (data && data.user_data) {
+      this.saveUserData(data.user_data);
+      return data.user_data;
+    }
+    return null;
+  }
 }
 
 // Global singleton instance

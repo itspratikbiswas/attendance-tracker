@@ -50,6 +50,9 @@
     }
   </script>
 
+  <!-- Supabase Cloud Backend CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
   <!-- Mammoth.js for DOCX -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 </head>
@@ -695,6 +698,32 @@
           <label class="block text-xs font-semibold text-slate-300 mb-2">Registered Subjects</label>
           <div id="settings-subjects-list" class="space-y-1.5 max-h-36 overflow-y-auto pr-1">
             <!-- Rendered by app.js -->
+          </div>
+        </div>
+
+        <!-- Cloud Backend (Supabase Sync) -->
+        <div class="p-3.5 bg-slate-900/60 rounded-xl border border-slate-800 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <label class="block text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+              <i data-lucide="cloud" class="w-3.5 h-3.5 text-cyan-400"></i> Cloud Sync (Supabase / Free Backend)
+            </label>
+            <span class="text-[10px] text-slate-500">Cross-Device Sync</span>
+          </div>
+          <div>
+            <label class="block text-[11px] text-slate-400 mb-1">Supabase Project URL</label>
+            <input type="text" id="setting-supabase-url" placeholder="https://your-project.supabase.co" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-white font-mono">
+          </div>
+          <div>
+            <label class="block text-[11px] text-slate-400 mb-1">Supabase Anon Public Key</label>
+            <input type="password" id="setting-supabase-key" placeholder="eyJhbGciOi..." class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-white font-mono">
+          </div>
+          <div class="flex items-center gap-2 pt-1">
+            <button type="button" onclick="app.pushToCloud()" class="px-3 py-1.5 bg-indigo-950 hover:bg-indigo-900 text-indigo-300 border border-indigo-500/30 text-xs rounded-lg flex items-center gap-1">
+              <i data-lucide="cloud-upload" class="w-3.5 h-3.5"></i> Push to Cloud
+            </button>
+            <button type="button" onclick="app.pullFromCloud()" class="px-3 py-1.5 bg-cyan-950 hover:bg-cyan-900 text-cyan-300 border border-cyan-500/30 text-xs rounded-lg flex items-center gap-1">
+              <i data-lucide="cloud-download" class="w-3.5 h-3.5"></i> Pull from Cloud
+            </button>
           </div>
         </div>
 

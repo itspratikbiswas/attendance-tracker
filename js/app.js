@@ -66,6 +66,12 @@ class AttendanceApp {
     // API Key in settings modal
     const apiKeyInput = document.getElementById('setting-gemini-api-key');
     if (apiKeyInput) apiKeyInput.value = settings.geminiApiKey || '';
+
+    // Supabase inputs in settings modal
+    const supaUrlInput = document.getElementById('setting-supabase-url');
+    if (supaUrlInput) supaUrlInput.value = settings.supabaseUrl || '';
+    const supaKeyInput = document.getElementById('setting-supabase-key');
+    if (supaKeyInput) supaKeyInput.value = settings.supabaseAnonKey || '';
   }
 
   renderUserProfile() {
@@ -866,9 +872,62 @@ class AttendanceApp {
 
   saveSettingsForm() {
     const apiKey = document.getElementById('setting-gemini-api-key').value;
-    this.storage.updateSettings({ geminiApiKey: apiKey.trim() });
+    const supaUrl = document.getElementById('setting-supabase-url').value;
+    const supaKey = document.getElementById('setting-supabase-key').value;
+
+    this.storage.updateSettings({
+      geminiApiKey: apiKey.trim(),
+      supabaseUrl: supaUrl.trim(),
+      supabaseAnonKey: supaKey.trim()
+    });
+
     this.closeSettingsModal();
-    this.showToast('Settings saved successfully', 'success');
+    this.showToast('Settings & Cloud config saved!', 'success');
+  }
+
+  async pushToCloud() {
+    try {
+      const supaUrl = document.getElementById('setting-supabase-url').value;
+      const supaKey = document.getElementById('setting-supabase-key').value;
+      if (supaUrl || supaKey) {
+        this.storage.updateSettings({
+          supabaseUrl: supaUrl.trim(),
+          supabaseAnonKey: supaKey.trim()
+        });
+      }
+
+      this.showToast('Syncing data to Supabase cloud...', 'info');
+      await this.storage.syncToSupabaseCloud();
+      this.showToast('Data successfully synced to Cloud!', 'success');
+    } catch (err) {
+      console.error(err);
+      this.showToast('Cloud Push: ' + err.message, 'error');
+    }
+  }
+
+  async pullFromCloud() {
+    try {
+      const supaUrl = document.getElementById('setting-supabase-url').value;
+      const supaKey = document.getElementById('setting-supabase-key').value;
+      if (supaUrl || supaKey) {
+        this.storage.updateSettings({
+          supabaseUrl: supaUrl.trim(),
+          supabaseAnonKey: supaKey.trim()
+        });
+      }
+
+      this.showToast('Pulling data from Supabase cloud...', 'info');
+      const data = await this.storage.syncFromSupabaseCloud();
+      if (data) {
+        this.showToast('Cloud data loaded successfully!', 'success');
+        this.renderAllViews();
+      } else {
+        this.showToast('No cloud records found for this user.', 'info');
+      }
+    } catch (err) {
+      console.error(err);
+      this.showToast('Cloud Pull: ' + err.message, 'error');
+    }
   }
 
   renderSettingsSubjectsList() {
