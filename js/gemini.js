@@ -7,31 +7,91 @@
 
 class RoutineIngestionService {
   constructor() {
-    this.models = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+    this.activeModel = 'gemini-2.0-flash';
+    this.activeApiVersion = 'v1beta';
   }
 
   /**
-   * Test API Key connection
+   * Automatically discovers available generateContent models for user's specific key
+   */
+  async discoverAvailableModels(apiKey) {
+    const key = apiKey.trim();
+    const endpoints = [
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`,
+      `https://generativelanguage.googleapis.com/v1/models?key=${key}`
+    ];
+
+    for (const ep of endpoints) {
+      try {
+        const res = await fetch(ep);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.models && Array.isArray(data.models)) {
+            const valid = data.models
+              .filter(m => !m.supportedGenerationMethods || m.supportedGenerationMethods.includes('generateContent'))
+              .map(m => m.name.replace(/^models\//, ''));
+            if (valid.length > 0) {
+              // Prioritize flash/vision models
+              const prioritized = valid.sort((a, b) => {
+                const getScore = (name) => {
+                  if (name.includes('2.0-flash')) return 100;
+                  if (name.includes('1.5-flash')) return 90;
+                  if (name.includes('flash')) return 80;
+                  if (name.includes('1.5-pro')) return 70;
+                  if (name.includes('2.5')) return 60;
+                  if (name.includes('pro')) return 50;
+                  return 10;
+                };
+                return getScore(b) - getScore(a);
+              });
+              return prioritized;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Model discovery failed, using fallback list:', e);
+      }
+    }
+    return ['gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.5-flash', 'gemini-pro'];
+  }
+
+  /**
+   * Test API Key connection across dynamic models & API versions
    */
   async testApiKey(apiKey) {
     if (!apiKey || apiKey.trim().length < 10) {
       throw new Error('Please enter a valid Gemini API key (starts with AIzaSy...)');
     }
     const key = apiKey.trim();
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: 'Respond with OK if connected.' }] }]
-      })
-    });
+    const availableModels = await this.discoverAvailableModels(key);
+    
+    let lastError = null;
+    for (const model of availableModels) {
+      for (const ver of ['v1beta', 'v1']) {
+        try {
+          const endpoint = `https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${key}`;
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts: [{ text: 'Ping' }] }]
+            })
+          });
 
-    if (!response.ok) {
-      const errJson = await response.json().catch(() => ({}));
-      throw new Error(errJson.error?.message || `Google API returned HTTP ${response.status}`);
+          if (response.ok) {
+            this.activeModel = model;
+            this.activeApiVersion = ver;
+            return { model: model, version: ver };
+          } else {
+            const errJson = await response.json().catch(() => ({}));
+            lastError = new Error(errJson.error?.message || `HTTP ${response.status}`);
+          }
+        } catch (e) {
+          lastError = e;
+        }
+      }
     }
-    return true;
+    throw lastError || new Error('Could not connect to Gemini API. Please check your key at aistudio.google.com/apikey');
   }
 
   /**
@@ -51,17 +111,15 @@ class RoutineIngestionService {
         if (geminiResult && geminiResult.length > 0) {
           return {
             success: true,
-            source: 'Gemini AI Vision',
+            source: `Gemini AI (${this.activeModel || 'Vision'})`,
             routine: this.normalizeRoutine(geminiResult)
           };
         }
       } catch (err) {
         console.error('Gemini API Error:', err);
-        // If it was an image/pdf where Gemini is primary, throw the actual error to user
         if (['png', 'jpg', 'jpeg', 'webp'].includes(fileType)) {
           throw new Error(`Gemini AI Error: ${err.message}. Please check your API key in Settings.`);
         }
-        // Otherwise fall through for spreadsheets/docs
       }
     }
 
@@ -77,7 +135,6 @@ class RoutineIngestionService {
         const result = await this.parseDocx(file);
         return { success: true, source: 'Mammoth Document Engine', routine: this.normalizeRoutine(result) };
       } else if (['png', 'jpg', 'jpeg', 'webp'].includes(fileType)) {
-        // If image without API key, return smart sample template + prompt user for API key
         return {
           success: true,
           source: 'Demo Schedule Pattern',
@@ -94,7 +151,7 @@ class RoutineIngestionService {
   }
 
   /**
-   * Gemini Multimodal Call with Multi-Model Fallback
+   * Gemini Multimodal Call with Dynamic Model Discovery & Fallback
    */
   async parseWithGeminiAPI(file, apiKey, trackingMode) {
     const base64Data = await this.fileToBase64(file);
@@ -147,56 +204,61 @@ Do not output markdown codeblocks if possible, or only pure JSON array.
       }
     };
 
+    const candidateModels = await this.discoverAvailableModels(apiKey);
     let lastError = null;
-    const candidateModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
 
     for (const model of candidateModels) {
-      try {
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(requestBody)
-        });
+      for (const ver of ['v1beta', 'v1']) {
+        try {
+          const endpoint = `https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${apiKey}`;
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody)
+          });
 
-        if (!response.ok) {
-          const errJson = await response.json().catch(() => ({}));
-          throw new Error(errJson.error?.message || `Model ${model} returned HTTP ${response.status}`);
+          if (!response.ok) {
+            const errJson = await response.json().catch(() => ({}));
+            throw new Error(errJson.error?.message || `Model ${model} returned HTTP ${response.status}`);
+          }
+
+          const data = await response.json();
+          const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (!rawContent) {
+            throw new Error('Empty response received from AI model.');
+          }
+
+          this.activeModel = model;
+          this.activeApiVersion = ver;
+
+          // Clean up code blocks if returned
+          let cleanJson = rawContent.trim();
+          if (cleanJson.startsWith('```json')) {
+            cleanJson = cleanJson.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+          } else if (cleanJson.startsWith('```')) {
+            cleanJson = cleanJson.replace(/^```\s*/, '').replace(/\s*```$/, '');
+          }
+
+          // Find JSON array in text if wrapped in other text
+          const jsonMatch = cleanJson.match(/\[\s*\{[\s\S]*\}\s*\]/);
+          if (jsonMatch) {
+            cleanJson = jsonMatch[0];
+          }
+
+          const parsedArray = JSON.parse(cleanJson);
+          if (!Array.isArray(parsedArray)) {
+            throw new Error('Expected JSON array of routine items.');
+          }
+
+          return parsedArray;
+        } catch (err) {
+          console.warn(`Attempt with ${ver}/${model} failed:`, err.message);
+          lastError = err;
         }
-
-        const data = await response.json();
-        const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!rawContent) {
-          throw new Error('Empty response received from AI model.');
-        }
-
-        // Clean up code blocks if returned
-        let cleanJson = rawContent.trim();
-        if (cleanJson.startsWith('```json')) {
-          cleanJson = cleanJson.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-        } else if (cleanJson.startsWith('```')) {
-          cleanJson = cleanJson.replace(/^```\s*/, '').replace(/\s*```$/, '');
-        }
-
-        // Find JSON array in text if wrapped in other text
-        const jsonMatch = cleanJson.match(/\[\s*\{[\s\S]*\}\s*\]/);
-        if (jsonMatch) {
-          cleanJson = jsonMatch[0];
-        }
-
-        const parsedArray = JSON.parse(cleanJson);
-        if (!Array.isArray(parsedArray)) {
-          throw new Error('Expected JSON array of routine items.');
-        }
-
-        return parsedArray;
-      } catch (err) {
-        console.warn(`Failed with model ${model}:`, err.message);
-        lastError = err;
       }
     }
 
-    throw lastError || new Error('All Gemini models failed to process the image.');
+    throw lastError || new Error('All available Gemini models failed to process the image.');
   }
 
   /**
