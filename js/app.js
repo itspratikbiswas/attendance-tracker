@@ -32,6 +32,10 @@ class AttendanceApp {
     if (!user) {
       authOverlay.classList.remove('hidden');
       mainApp.classList.add('hidden');
+      const loginId = document.getElementById('login-identifier');
+      const loginPass = document.getElementById('login-password');
+      if (loginId) loginId.value = '';
+      if (loginPass) loginPass.value = '';
     } else {
       authOverlay.classList.add('hidden');
       mainApp.classList.remove('hidden');
