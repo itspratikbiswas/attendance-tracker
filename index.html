@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OmniAttend - AI Multi-User Attendance & Schedule Regulator</title>
+  <meta name="description" content="State-of-the-art multi-user attendance tracking and routine ingestion application with dynamic hour-wise and day-wise adaptive metrics.">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Google Fonts & Custom CSS -->
+  <link rel="stylesheet" href="css/styles.css">
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Canvas Confetti -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+  <!-- SheetJS (xlsx/csv parser) -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+
+  <!-- PDF.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+  </script>
+
+  <!-- Mammoth.js for DOCX -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 antialiased min-h-screen flex flex-col justify-between">
+
+  <!-- ================= AUTHENTICATION OVERLAY ================= -->
+  <div id="auth-landing" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-xl">
+    <div class="glass-panel max-w-md w-full p-8 rounded-3xl border border-slate-800 shadow-2xl relative overflow-hidden">
+      <div class="absolute -top-24 -right-24 w-48 h-48 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none"></div>
+      <div class="absolute -bottom-24 -left-24 w-48 h-48 bg-cyan-500/20 rounded-full blur-3xl pointer-events-none"></div>
+
+      <!-- App Brand -->
+      <div class="text-center mb-8">
+        <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 to-cyan-500 text-white shadow-lg shadow-indigo-500/30 mb-3">
+          <i data-lucide="shield-check" class="w-8 h-8"></i>
+        </div>
+        <h1 class="text-2xl font-bold text-white tracking-tight">OmniAttend</h1>
+        <p class="text-xs text-slate-400 mt-1">Multi-User Adaptive Attendance & Schedule Intelligence</p>
+      </div>
+
+      <!-- Login Box -->
+      <div id="auth-login-box">
+        <form id="form-login" class="space-y-4">
+          <div>
+            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Email or Username</label>
+            <div class="relative">
+              <i data-lucide="mail" class="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5"></i>
+              <input type="text" id="login-identifier" required placeholder="alex@student.edu or alex_cs" value="alex@student.edu" 
+                     class="w-full bg-slate-900/80 border border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-indigo-500 transition">
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Password</label>
+            <div class="relative">
+              <i data-lucide="lock" class="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5"></i>
+              <input type="password" id="login-password" required placeholder="••••••••" value="password123" 
+                     class="w-full bg-slate-900/80 border border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-indigo-500 transition">
+            </div>
+          </div>
+
+          <button type="submit" class="btn-interactive w-full py-3 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white font-semibold rounded-xl text-sm shadow-lg shadow-indigo-500/25 transition">
+            Sign In to Dashboard
+          </button>
+        </form>
+
+        <div class="mt-4 pt-4 border-t border-slate-800/80 text-center">
+          <p class="text-xs text-slate-400">
+            Don't have an account? 
+            <button id="btn-show-signup" class="text-indigo-400 hover:text-indigo-300 font-semibold ml-1">Create Account</button>
+          </p>
+          <div class="mt-4">
+            <button type="button" onclick="app.loginDemoUser('usr_demo_101')" class="w-full py-2 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700/80 rounded-xl text-xs font-medium transition flex items-center justify-center gap-2">
+              <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400"></i> Instant 1-Click Demo Login
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sign Up Box -->
+      <div id="auth-signup-box" class="hidden">
+        <form id="form-register" class="space-y-3.5">
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 mb-1">Full Name</label>
+            <input type="text" id="reg-name" required placeholder="e.g. Jordan Smith" 
+                   class="w-full bg-slate-900/80 border border-slate-800 rounded-xl py-2 px-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 mb-1">Email Address</label>
+            <input type="email" id="reg-email" required placeholder="jordan@univ.edu" 
+                   class="w-full bg-slate-900/80 border border-slate-800 rounded-xl py-2 px-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition">
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-xs font-semibold text-slate-400 mb-1">Username</label>
+              <input type="text" id="reg-username" required placeholder="jordan_cs" 
+                     class="w-full bg-slate-900/80 border border-slate-800 rounded-xl py-2 px-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-400 mb-1">Major / Stream</label>
+              <input type="text" id="reg-role" placeholder="Computer Eng" value="Student" 
+                     class="w-full bg-slate-900/80 border border-slate-800 rounded-xl py-2 px-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition">
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 mb-1">Password</label>
+            <input type="password" id="reg-password" required placeholder="••••••••" 
+                   class="w-full bg-slate-900/80 border border-slate-800 rounded-xl py-2 px-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition">
+          </div>
+
+          <button type="submit" class="btn-interactive w-full py-2.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-semibold rounded-xl text-sm shadow-lg shadow-emerald-500/25 transition">
+            Register & Start Tracking
+          </button>
+        </form>
+
+        <div class="mt-4 pt-3 border-t border-slate-800/80 text-center">
+          <p class="text-xs text-slate-400">
+            Already registered? 
+            <button id="btn-show-login" class="text-indigo-400 hover:text-indigo-300 font-semibold ml-1">Sign In</button>
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================= MAIN APP CONTAINER ================= -->
+  <div id="main-app-container" class="hidden flex-1 flex flex-col">
+
+    <!-- Top Navigation Bar -->
+    <header class="glass-header sticky top-0 z-40 border-b border-slate-800/80">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center justify-between h-16 gap-4">
+          
+          <!-- Logo & Brand -->
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-cyan-500 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
+              <i data-lucide="shield-check" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <div class="font-bold text-white tracking-tight flex items-center gap-1.5">
+                OmniAttend
+                <span class="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-indigo-950 text-indigo-400 border border-indigo-500/30">v2.0</span>
+              </div>
+              <p class="text-[11px] text-slate-400">Academic Regulator</p>
+            </div>
+          </div>
+
+          <!-- Central Global Controls: Mode Switch & Target Slider -->
+          <div class="hidden lg:flex items-center gap-6 bg-slate-900/90 px-4 py-1.5 rounded-2xl border border-slate-800">
+            
+            <!-- Tracking Mode Toggle -->
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-semibold text-slate-400 flex items-center gap-1">
+                <i data-lucide="clock" class="w-3.5 h-3.5 text-indigo-400"></i> Mode:
+              </span>
+              <div class="flex items-center bg-slate-950 p-0.5 rounded-xl border border-slate-800">
+                <button data-mode="hour" class="mode-toggle-btn px-2.5 py-1 text-xs font-medium rounded-lg transition active bg-indigo-600 text-white">
+                  Hour-Wise
+                </button>
+                <button data-mode="day" class="mode-toggle-btn px-2.5 py-1 text-xs font-medium rounded-lg text-slate-400 transition">
+                  Day-Wise
+                </button>
+              </div>
+            </div>
+
+            <div class="h-4 w-px bg-slate-800"></div>
+
+            <!-- Target Slider Control -->
+            <div class="flex items-center gap-3">
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs font-semibold text-slate-400">Min Target:</span>
+                <span id="target-slider-display" class="text-xs font-bold text-indigo-400 font-mono">75%</span>
+              </div>
+              <input type="range" id="target-attendance-slider" min="50" max="95" step="1" value="75" class="w-24">
+            </div>
+          </div>
+
+          <!-- Right Action Center -->
+          <div class="flex items-center gap-3">
+            
+            <!-- AI Ingestion Quick Button -->
+            <button onclick="app.openRoutineModal()" class="btn-interactive hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white text-xs font-semibold shadow-md shadow-indigo-500/20 transition">
+              <i data-lucide="sparkles" class="w-3.5 h-3.5 text-yellow-300"></i>
+              <span>Ingest Routine</span>
+            </button>
+
+            <!-- Settings Button -->
+            <button onclick="app.openSettingsModal()" title="Settings & API Key" class="p-2 text-slate-400 hover:text-white bg-slate-900/80 hover:bg-slate-800 rounded-xl border border-slate-800 transition">
+              <i data-lucide="settings" class="w-4 h-4"></i>
+            </button>
+
+            <!-- User Profile & Log Out -->
+            <div class="flex items-center gap-2.5 pl-2 border-l border-slate-800">
+              <img id="user-avatar-img" src="" alt="Avatar" class="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 object-cover">
+              <div class="hidden md:block text-left">
+                <div id="user-display-name" class="text-xs font-semibold text-white leading-tight">Alex Rivera</div>
+                <div id="user-display-role" class="text-[10px] text-slate-400 leading-none mt-0.5">Student</div>
+              </div>
+              <button onclick="app.logout()" title="Sign Out" class="p-1.5 text-slate-400 hover:text-rose-400 transition ml-1">
+                <i data-lucide="log-out" class="w-4 h-4"></i>
+              </button>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Mobile Global Controls Bar -->
+    <div class="lg:hidden bg-slate-900 border-b border-slate-800 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+      <div class="flex items-center gap-1.5">
+        <span class="text-slate-400">Mode:</span>
+        <div class="flex bg-slate-950 p-0.5 rounded-lg border border-slate-800">
+          <button data-mode="hour" class="mode-toggle-btn px-2 py-0.5 rounded text-[11px] bg-indigo-600 text-white">Hour</button>
+          <button data-mode="day" class="mode-toggle-btn px-2 py-0.5 rounded text-[11px] text-slate-400">Day</button>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="text-slate-400">Target: <span id="target-mobile-display" class="text-indigo-400 font-mono font-bold">75%</span></span>
+        <button onclick="app.openRoutineModal()" class="px-2 py-1 bg-indigo-600 text-white rounded text-[11px] flex items-center gap-1">
+          <i data-lucide="sparkles" class="w-3 h-3"></i> Routine
+        </button>
+      </div>
+    </div>
+
+    <!-- Secondary Tab Navigation -->
+    <div class="bg-slate-900/60 border-b border-slate-800/80">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <nav class="flex space-x-1 sm:space-x-4 overflow-x-auto py-2">
+          <button data-tab="dashboard" class="nav-tab active px-3.5 py-2 text-xs font-semibold rounded-xl flex items-center gap-2 transition text-slate-400">
+            <i data-lucide="layout-dashboard" class="w-4 h-4"></i> Dashboard
+          </button>
+          <button data-tab="today" class="nav-tab px-3.5 py-2 text-xs font-semibold rounded-xl flex items-center gap-2 transition text-slate-400">
+            <i data-lucide="calendar-check" class="w-4 h-4"></i> Today's Classes
+          </button>
+          <button data-tab="timetable" class="nav-tab px-3.5 py-2 text-xs font-semibold rounded-xl flex items-center gap-2 transition text-slate-400">
+            <i data-lucide="table" class="w-4 h-4"></i> Weekly Timetable
+          </button>
+          <button data-tab="history" class="nav-tab px-3.5 py-2 text-xs font-semibold rounded-xl flex items-center gap-2 transition text-slate-400">
+            <i data-lucide="history" class="w-4 h-4"></i> Attendance Log
+          </button>
+          <button data-tab="analytics" class="nav-tab px-3.5 py-2 text-xs font-semibold rounded-xl flex items-center gap-2 transition text-slate-400">
+            <i data-lucide="pie-chart" class="w-4 h-4"></i> Analytics & Trends
+          </button>
+        </nav>
+      </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full space-y-6">
+
+      <!-- ================= TAB 1: DASHBOARD ================= -->
+      <div id="tab-panel-dashboard" class="tab-content-panel space-y-6">
+        
+        <!-- Hero Metrics & Regulator Banner -->
+        <div class="glass-panel p-6 sm:p-8 rounded-3xl border border-slate-800 relative overflow-hidden">
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+            
+            <!-- Gauge / Progress Ring -->
+            <div class="lg:col-span-4 flex flex-col sm:flex-row items-center gap-6 justify-center lg:justify-start">
+              <div class="relative w-36 h-36 flex items-center justify-center shrink-0">
+                <svg class="w-full h-full transform -rotate-90">
+                  <circle cx="72" cy="72" r="60" stroke="currentColor" stroke-width="12" class="text-slate-800/80" fill="transparent" />
+                  <circle id="overall-progress-circle" cx="72" cy="72" r="60" stroke="#10b981" stroke-width="12" 
+                          stroke-dasharray="376.99" stroke-dashoffset="60" stroke-linecap="round" fill="transparent" 
+                          class="progress-ring-circle" />
+                </svg>
+                <div class="absolute flex flex-col items-center justify-center text-center">
+                  <span id="metric-overall-percentage" class="text-3xl font-extrabold text-white tracking-tight">85.4%</span>
+                  <span id="metric-target-reference" class="text-[10px] font-mono text-slate-400">Target: 75%</span>
+                </div>
+              </div>
+
+              <div class="text-center sm:text-left">
+                <div class="flex items-center justify-center sm:justify-start gap-2 mb-1.5">
+                  <span class="text-xs uppercase tracking-wider font-semibold text-slate-400">Overall Status</span>
+                  <span id="metric-status-badge" class="px-2.5 py-0.5 text-xs font-semibold rounded-full border bg-emerald-950/80 text-emerald-400 border-emerald-500/30">
+                    Safe to skip 4.5 hrs
+                  </span>
+                </div>
+                <h3 class="text-xl font-bold text-white">Attendance Regulator</h3>
+                <p id="metric-advice-description" class="text-xs text-slate-400 mt-1 max-w-sm">
+                  You are comfortably above target. You can safely miss scheduled slots without falling below your threshold.
+                </p>
+              </div>
+            </div>
+
+            <!-- Stats Counters -->
+            <div class="lg:col-span-8 grid grid-cols-2 sm:grid-cols-3 gap-4">
+              <div class="glass-panel p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+                <div class="flex items-center justify-between text-slate-400 text-xs font-semibold mb-1">
+                  <span>Attended</span>
+                  <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i>
+                </div>
+                <div class="text-2xl font-bold text-emerald-400 font-mono" id="metric-total-attended">38.5</div>
+                <div class="text-[11px] text-slate-400 mt-0.5"><span class="metric-unit-label">hours</span> completed</div>
+              </div>
+
+              <div class="glass-panel p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+                <div class="flex items-center justify-between text-slate-400 text-xs font-semibold mb-1">
+                  <span>Total Conducted</span>
+                  <i data-lucide="calendar" class="w-4 h-4 text-indigo-400"></i>
+                </div>
+                <div class="text-2xl font-bold text-white font-mono" id="metric-total-conducted">45.0</div>
+                <div class="text-[11px] text-slate-400 mt-0.5">Total eligible <span class="metric-unit-label">hours</span></div>
+              </div>
+
+              <div class="glass-panel p-4 rounded-2xl bg-slate-900/60 border border-slate-800 col-span-2 sm:col-span-1">
+                <div class="flex items-center justify-between text-slate-400 text-xs font-semibold mb-1">
+                  <span>Cancelled / Off</span>
+                  <i data-lucide="ban" class="w-4 h-4 text-slate-400"></i>
+                </div>
+                <div class="text-2xl font-bold text-slate-400 font-mono" id="metric-total-cancelled">3.0</div>
+                <div class="text-[11px] text-slate-400 mt-0.5">Excluded <span class="metric-unit-label">hours</span></div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Subjects Grid Header -->
+        <div class="flex items-center justify-between pt-2">
+          <div>
+            <h3 class="text-lg font-bold text-white">Semester Courses & Modules</h3>
+            <p class="text-xs text-slate-400">Real-time attendance calculations and dynamic skip/attend counters</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="app.openAddSubjectModal()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold border border-slate-700 transition flex items-center gap-1.5">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i> Add Course
+            </button>
+          </div>
+        </div>
+
+        <!-- Subject Cards Container -->
+        <div id="subject-cards-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <!-- Dynamically Rendered by app.js -->
+        </div>
+
+      </div>
+
+      <!-- ================= TAB 2: TODAY'S CLASSES ================= -->
+      <div id="tab-panel-today" class="tab-content-panel hidden space-y-4">
+        <div class="flex items-center justify-between pb-2">
+          <div>
+            <h3 class="text-lg font-bold text-white">Today's Class Schedule</h3>
+            <p id="today-day-name" class="text-xs text-indigo-400 font-medium font-mono">Monday, Oct 12, 2026</p>
+          </div>
+          <button onclick="app.openRoutineModal()" class="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1">
+            <i data-lucide="upload" class="w-3.5 h-3.5"></i> Re-import Routine
+          </button>
+        </div>
+
+        <div id="today-classes-list" class="space-y-3">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+
+      <!-- ================= TAB 3: WEEKLY TIMETABLE ================= -->
+      <div id="tab-panel-timetable" class="tab-content-panel hidden space-y-4">
+        <div class="flex items-center justify-between pb-2">
+          <div>
+            <h3 class="text-lg font-bold text-white">Weekly Class Timetable</h3>
+            <p class="text-xs text-slate-400">Visual weekly schedule matrix with exact hourly durations</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="app.openAddSlotModal()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold transition flex items-center gap-1.5">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i> Add Slot
+            </button>
+            <button onclick="app.openRoutineModal()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-medium border border-slate-700 flex items-center gap-1.5">
+              <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> AI Auto-Routine
+            </button>
+          </div>
+        </div>
+
+        <div id="timetable-grid-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+          <!-- Rendered by app.js -->
+        </div>
+      </div>
+
+      <!-- ================= TAB 4: ATTENDANCE HISTORY LOG ================= -->
+      <div id="tab-panel-history" class="tab-content-panel hidden space-y-4">
+        <div class="glass-panel p-5 rounded-2xl border border-slate-800">
+          <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+            <div>
+              <h3 class="text-lg font-bold text-white">Attendance Audit Log</h3>
+              <p class="text-xs text-slate-400">Detailed chronological audit of every marked attendance slot</p>
+            </div>
+            
+            <!-- Filters -->
+            <div class="flex items-center gap-3">
+              <div>
+                <select id="history-filter-subject" class="bg-slate-900 text-xs text-slate-300 border border-slate-800 rounded-xl py-1.5 px-3 focus:outline-none focus:border-indigo-500">
+                  <option value="all">All Subjects</option>
+                </select>
+              </div>
+              <div>
+                <select id="history-filter-status" class="bg-slate-900 text-xs text-slate-300 border border-slate-800 rounded-xl py-1.5 px-3 focus:outline-none focus:border-indigo-500">
+                  <option value="all">All Statuses</option>
+                  <option value="present">Present</option>
+                  <option value="absent">Absent</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Table -->
+          <div class="overflow-x-auto mt-3">
+            <table class="w-full text-left">
+              <thead>
+                <tr class="text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-800">
+                  <th class="py-2.5 px-4">Date</th>
+                  <th class="py-2.5 px-4">Subject</th>
+                  <th class="py-2.5 px-4">Duration</th>
+                  <th class="py-2.5 px-4">Status</th>
+                  <th class="py-2.5 px-4">Notes</th>
+                  <th class="py-2.5 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="history-log-table-body">
+                <!-- Dynamically generated rows -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= TAB 5: ANALYTICS & TRENDS ================= -->
+      <div id="tab-panel-analytics" class="tab-content-panel hidden space-y-6">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          
+          <!-- Subject Comparison Chart -->
+          <div class="lg:col-span-8 glass-panel p-6 rounded-3xl border border-slate-800">
+            <h4 class="text-base font-bold text-white mb-1">Subject Attendance vs Target %</h4>
+            <p class="text-xs text-slate-400 mb-4">Comparison of current attendance across individual subjects against the minimum target</p>
+            <div class="h-72 w-full relative">
+              <canvas id="chart-attendance-trend"></canvas>
+            </div>
+          </div>
+
+          <!-- Distribution Chart -->
+          <div class="lg:col-span-4 glass-panel p-6 rounded-3xl border border-slate-800 flex flex-col justify-between">
+            <div>
+              <h4 class="text-base font-bold text-white mb-1">Session Distribution</h4>
+              <p class="text-xs text-slate-400 mb-4">Breakdown of attended, absent, and cancelled units</p>
+              <div class="h-60 w-full relative">
+                <canvas id="chart-subject-distribution"></canvas>
+              </div>
+            </div>
+            <div class="pt-4 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+              <span>Dynamic calculation mode</span>
+              <span class="font-semibold text-indigo-400">Active</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-slate-800/80 py-4 bg-slate-950 text-center text-xs text-slate-500">
+      <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <span>OmniAttend Academic Intelligence</span>
+          <span>•</span>
+          <span class="text-slate-400">Multi-User Isolated Storage</span>
+        </div>
+        <div class="flex items-center gap-4">
+          <button onclick="app.exportBackup()" class="hover:text-slate-300">Export Backup</button>
+          <button onclick="app.resetDemo()" class="hover:text-amber-400">Reset Demo Data</button>
+        </div>
+      </div>
+    </footer>
+
+  </div>
+
+  <!-- ================= MODAL: UNIVERSAL ROUTINE INGESTION ================= -->
+  <div id="routine-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md hidden modal-overlay">
+    <div class="glass-panel max-w-2xl w-full p-6 sm:p-8 rounded-3xl border border-slate-800 shadow-2xl modal-content max-h-[90vh] flex flex-col justify-between">
+      
+      <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-xl bg-indigo-600/20 text-indigo-400 flex items-center justify-center border border-indigo-500/30">
+            <i data-lucide="sparkles" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h3 class="text-lg font-bold text-white">Universal Routine Ingestion</h3>
+            <p class="text-xs text-slate-400">Upload PDF, Image, Excel, CSV or Word documents</p>
+          </div>
+        </div>
+        <button onclick="app.closeRoutineModal()" class="text-slate-400 hover:text-white p-1">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Upload Zone -->
+      <div class="my-6 space-y-4">
+        
+        <div id="routine-upload-zone" class="dropzone border-2 border-dashed border-slate-700 hover:border-indigo-500/80 rounded-2xl p-8 text-center cursor-pointer transition bg-slate-900/40">
+          <input type="file" id="routine-file-input" class="hidden" accept=".pdf,.png,.jpg,.jpeg,.webp,.csv,.xlsx,.xls,.docx">
+          <i data-lucide="cloud-upload" class="w-12 h-12 text-indigo-400 mx-auto mb-3"></i>
+          <h4 class="text-sm font-semibold text-white">Drag & drop your routine file here</h4>
+          <p class="text-xs text-slate-400 mt-1">Supports PDF, PNG/JPG images, Excel (.xlsx, .csv), and Word (.docx)</p>
+          <div class="mt-4 inline-block px-3 py-1.5 bg-slate-800 text-indigo-300 rounded-lg text-xs font-semibold border border-slate-700">
+            Browse File from Device
+          </div>
+        </div>
+
+        <!-- Parsing Loader -->
+        <div id="routine-parsing-loader" class="hidden text-center py-6">
+          <div class="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-500 mb-2"></div>
+          <p class="text-xs font-medium text-indigo-300">Analyzing schedule with AI & calculating hourly durations...</p>
+        </div>
+
+        <!-- Extracted Routine Preview -->
+        <div id="routine-preview-container" class="hidden space-y-3">
+          <div class="flex items-center justify-between">
+            <span id="routine-parsed-source-badge" class="px-2.5 py-0.5 text-xs font-mono bg-indigo-950 text-indigo-300 rounded border border-indigo-500/30">
+              Extracted via: Gemini 1.5 Flash AI
+            </span>
+            <span class="text-xs text-slate-400">Review & confirm slots below</span>
+          </div>
+
+          <div id="routine-preview-notice" class="hidden p-2.5 bg-amber-950/40 border border-amber-500/30 rounded-xl text-xs text-amber-300"></div>
+
+          <div class="max-h-56 overflow-y-auto border border-slate-800 rounded-xl">
+            <table class="w-full text-left">
+              <thead class="bg-slate-900/80 sticky top-0">
+                <tr class="text-[10px] uppercase text-slate-400 border-b border-slate-800">
+                  <th class="py-2 px-3">Day</th>
+                  <th class="py-2 px-3">Subject</th>
+                  <th class="py-2 px-3">Time</th>
+                  <th class="py-2 px-3">Duration</th>
+                  <th class="py-2 px-3">Room</th>
+                  <th class="py-2 px-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody id="routine-preview-table-body">
+                <!-- Dynamically filled -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="pt-4 border-t border-slate-800 flex items-center justify-between">
+        <button onclick="app.closeRoutineModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium transition">
+          Cancel
+        </button>
+        <button id="btn-apply-routine" onclick="app.applyExtractedRoutine()" class="hidden px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-indigo-500/20 transition flex items-center gap-1.5">
+          <i data-lucide="check" class="w-4 h-4"></i> Apply to Timetable & Subjects
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================= MODAL: ADD MANUAL TIMETABLE SLOT ================= -->
+  <div id="add-slot-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md hidden modal-overlay">
+    <div class="glass-panel max-w-md w-full p-6 rounded-3xl border border-slate-800 shadow-2xl modal-content">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+        <h3 class="text-base font-bold text-white">Add Scheduled Class Slot</h3>
+        <button onclick="app.closeAddSlotModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+      <div class="space-y-3.5 my-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1">Subject</label>
+          <select id="slot-input-subject" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-xs text-white focus:outline-none focus:border-indigo-500"></select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1">Day of Week</label>
+          <select id="slot-input-day" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-xs text-white focus:outline-none focus:border-indigo-500">
+            <option value="Monday">Monday</option>
+            <option value="Tuesday">Tuesday</option>
+            <option value="Wednesday">Wednesday</option>
+            <option value="Thursday">Thursday</option>
+            <option value="Friday">Friday</option>
+            <option value="Saturday">Saturday</option>
+          </select>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">Start Time</label>
+            <input type="time" id="slot-input-start" value="09:00" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-xs text-white">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">End Time</label>
+            <input type="time" id="slot-input-end" value="10:30" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-xs text-white">
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">Room / Hall</label>
+            <input type="text" id="slot-input-room" placeholder="Hall 201" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-xs text-white">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">Instructor</label>
+            <input type="text" id="slot-input-instructor" placeholder="Prof. Name" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-xs text-white">
+          </div>
+        </div>
+      </div>
+      <div class="pt-3 border-t border-slate-800 flex justify-end gap-2">
+        <button onclick="app.closeAddSlotModal()" class="px-3 py-1.5 bg-slate-800 text-slate-300 text-xs rounded-xl">Cancel</button>
+        <button onclick="app.saveManualSlot()" class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl">Save Slot</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MODAL: ADD SUBJECT ================= -->
+  <div id="add-subject-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md hidden modal-overlay">
+    <div class="glass-panel max-w-md w-full p-6 rounded-3xl border border-slate-800 shadow-2xl modal-content">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+        <h3 class="text-base font-bold text-white">Create New Course / Subject</h3>
+        <button onclick="app.closeAddSubjectModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+      <div class="space-y-3.5 my-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1">Subject Name</label>
+          <input type="text" id="subject-input-name" placeholder="e.g. Distributed Systems" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-xs text-white">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">Course Code</label>
+            <input type="text" id="subject-input-code" placeholder="CS-402" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-xs text-white">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">Color Theme</label>
+            <input type="color" id="subject-input-color" value="#6366f1" class="w-full h-9 bg-slate-900 border border-slate-800 rounded-xl p-1">
+          </div>
+        </div>
+      </div>
+      <div class="pt-3 border-t border-slate-800 flex justify-end gap-2">
+        <button onclick="app.closeAddSubjectModal()" class="px-3 py-1.5 bg-slate-800 text-slate-300 text-xs rounded-xl">Cancel</button>
+        <button onclick="app.saveManualSubject()" class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl">Add Subject</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MODAL: SETTINGS ================= -->
+  <div id="settings-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md hidden modal-overlay">
+    <div class="glass-panel max-w-lg w-full p-6 rounded-3xl border border-slate-800 shadow-2xl modal-content max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <i data-lucide="settings" class="w-4 h-4 text-indigo-400"></i> Settings & Integrations
+        </h3>
+        <button onclick="app.closeSettingsModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+
+      <div class="space-y-5 my-4">
+        <!-- Gemini API Key -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Google Gemini API Key</label>
+          <input type="password" id="setting-gemini-api-key" placeholder="AIzaSy..." class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white font-mono">
+          <p class="text-[11px] text-slate-500 mt-1">Used for OCR and multimodal timetable ingestion from images & PDF routines.</p>
+        </div>
+
+        <!-- Subjects Manager -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-2">Registered Subjects</label>
+          <div id="settings-subjects-list" class="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+            <!-- Rendered by app.js -->
+          </div>
+        </div>
+
+        <!-- Backup & Restore -->
+        <div class="p-3.5 bg-slate-900/60 rounded-xl border border-slate-800 space-y-2">
+          <label class="block text-xs font-semibold text-slate-300">Data Management</label>
+          <div class="flex items-center gap-2">
+            <button onclick="app.exportBackup()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-lg border border-slate-700 flex items-center gap-1">
+              <i data-lucide="download" class="w-3.5 h-3.5"></i> Export JSON
+            </button>
+            <label class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-lg border border-slate-700 flex items-center gap-1 cursor-pointer">
+              <i data-lucide="upload" class="w-3.5 h-3.5"></i> Import Backup
+              <input type="file" class="hidden" accept=".json" onchange="app.importBackup(this.files[0])">
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="pt-3 border-t border-slate-800 flex justify-end gap-2">
+        <button onclick="app.closeSettingsModal()" class="px-3 py-1.5 bg-slate-800 text-slate-300 text-xs rounded-xl">Cancel</button>
+        <button onclick="app.saveSettingsForm()" class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="fixed bottom-5 right-5 z-50 space-y-2 max-w-sm"></div>
+
+  <!-- Core Scripts -->
+  <script src="js/storage.js"></script>
+  <script src="js/metrics.js"></script>
+  <script src="js/gemini.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
