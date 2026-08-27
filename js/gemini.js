@@ -12,22 +12,41 @@ class RoutineIngestionService {
   }
 
   /**
+   * Generates correct authentication headers for both new AQ. auth keys and AIzaSy... API keys
+   */
+  getAuthHeaders(key) {
+    const clean = key.replace(/["']/g, '').trim();
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+    if (clean.startsWith('AQ.')) {
+      headers['Authorization'] = `Bearer ${clean}`;
+      headers['x-goog-api-key'] = clean;
+    } else {
+      headers['x-goog-api-key'] = clean;
+    }
+    return headers;
+  }
+
+  /**
    * Automatically discovers available generateContent models for user's specific key
    */
   async discoverAvailableModels(apiKey) {
     const key = apiKey.replace(/["']/g, '').trim();
-    const endpoints = [
-      `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`,
-      `https://generativelanguage.googleapis.com/v1/models?key=${key}`
-    ];
+    const endpoints = key.startsWith('AQ.')
+      ? [
+          'https://generativelanguage.googleapis.com/v1beta/models',
+          'https://generativelanguage.googleapis.com/v1/models'
+        ]
+      : [
+          `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`,
+          `https://generativelanguage.googleapis.com/v1/models?key=${key}`
+        ];
 
     for (const ep of endpoints) {
       try {
         const res = await fetch(ep, {
-          headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': key
-          }
+          headers: this.getAuthHeaders(key)
         });
         if (res.ok) {
           const data = await res.json();
@@ -73,13 +92,13 @@ class RoutineIngestionService {
     for (const model of availableModels) {
       for (const ver of ['v1beta', 'v1']) {
         try {
-          const endpoint = `https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${key}`;
+          const endpoint = key.startsWith('AQ.')
+            ? `https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent`
+            : `https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${key}`;
+
           const response = await fetch(endpoint, {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-goog-api-key': key
-            },
+            headers: this.getAuthHeaders(key),
             body: JSON.stringify({
               contents: [{ role: 'user', parts: [{ text: 'Ping' }] }]
             })
@@ -92,9 +111,6 @@ class RoutineIngestionService {
           } else {
             const errJson = await response.json().catch(() => ({}));
             let msg = errJson.error?.message || `HTTP ${response.status}`;
-            if (msg.includes('OAuth') || response.status === 401 || response.status === 403) {
-              msg = 'Invalid or restricted API Key. Make sure to copy your key directly from https://aistudio.google.com/apikey';
-            }
             lastError = new Error(msg);
           }
         } catch (e) {
@@ -102,7 +118,7 @@ class RoutineIngestionService {
         }
       }
     }
-    throw lastError || new Error('Could not connect to Gemini API. Please check your key at aistudio.google.com/apikey');
+    throw lastError || new Error('Could not connect to Gemini API. Please check your key.');
   }
 
   /**
@@ -222,22 +238,19 @@ Do not output markdown codeblocks if possible, or only pure JSON array.
     for (const model of candidateModels) {
       for (const ver of ['v1beta', 'v1']) {
         try {
-          const endpoint = `https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${key}`;
+          const endpoint = key.startsWith('AQ.')
+            ? `https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent`
+            : `https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${key}`;
+
           const response = await fetch(endpoint, {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-goog-api-key': key
-            },
+            headers: this.getAuthHeaders(key),
             body: JSON.stringify(requestBody)
           });
 
           if (!response.ok) {
             const errJson = await response.json().catch(() => ({}));
             let msg = errJson.error?.message || `Model ${model} returned HTTP ${response.status}`;
-            if (msg.includes('OAuth') || response.status === 401 || response.status === 403) {
-              msg = 'Invalid or restricted API Key. Make sure to copy your key directly from https://aistudio.google.com/apikey';
-            }
             throw new Error(msg);
           }
 
