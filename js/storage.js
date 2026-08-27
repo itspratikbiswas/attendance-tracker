@@ -236,6 +236,23 @@ class StorageService {
     return user;
   }
 
+  resetPassword(identifier, newPassword) {
+    const users = this.getUsers();
+    const idClean = identifier.trim().toLowerCase();
+
+    const userIndex = users.findIndex(u => 
+      u.email.toLowerCase() === idClean || u.username.toLowerCase() === idClean
+    );
+
+    if (userIndex === -1) {
+      throw new Error('No registered account found with that email or username.');
+    }
+
+    users[userIndex].password = newPassword;
+    localStorage.setItem(STORAGE_KEYS.USERS_LIST, JSON.stringify(users));
+    return true;
+  }
+
   setSession(user) {
     // Don't store password in session object
     const sessionUser = { ...user };

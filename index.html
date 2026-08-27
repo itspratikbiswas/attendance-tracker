@@ -86,10 +86,13 @@
           </div>
 
           <div>
-            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Password</label>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400">Password</label>
+              <button type="button" id="btn-show-forgot" class="text-xs text-indigo-400 hover:text-indigo-300 font-medium">Forgot Password?</button>
+            </div>
             <div class="relative">
               <i data-lucide="lock" class="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5"></i>
-              <input type="password" id="login-password" required placeholder="Enter your password" value="" autocomplete="new-password"
+              <input type="password" id="login-password" required placeholder="Enter your password" value="" autocomplete="new-password" 
                      class="w-full bg-slate-900/80 border border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-indigo-500 transition">
             </div>
           </div>
@@ -109,6 +112,41 @@
               <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400"></i> Instant 1-Click Demo Login
             </button>
           </div>
+        </div>
+      </div>
+
+      <!-- Forgot Password Box -->
+      <div id="auth-forgot-box" class="hidden">
+        <div class="text-center mb-4">
+          <h3 class="text-base font-bold text-white">Reset Account Password</h3>
+          <p class="text-xs text-slate-400 mt-0.5">Enter your registered email/username and set a new password</p>
+        </div>
+        <form id="form-forgot" class="space-y-3.5" autocomplete="off">
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 mb-1">Email or Username</label>
+            <input type="text" id="forgot-identifier" required placeholder="alex@student.edu or alex_cs" 
+                   class="w-full bg-slate-900/80 border border-slate-800 rounded-xl py-2 px-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 mb-1">New Password</label>
+            <input type="password" id="forgot-new-password" required placeholder="Enter new password" 
+                   class="w-full bg-slate-900/80 border border-slate-800 rounded-xl py-2 px-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 mb-1">Confirm New Password</label>
+            <input type="password" id="forgot-confirm-password" required placeholder="Re-enter new password" 
+                   class="w-full bg-slate-900/80 border border-slate-800 rounded-xl py-2 px-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition">
+          </div>
+
+          <button type="submit" class="btn-interactive w-full py-2.5 bg-gradient-to-r from-indigo-600 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 text-white font-semibold rounded-xl text-sm shadow-lg shadow-indigo-500/25 transition">
+            Update & Reset Password
+          </button>
+        </form>
+
+        <div class="mt-4 pt-3 border-t border-slate-800/80 text-center">
+          <button id="btn-forgot-back-login" class="text-xs text-indigo-400 hover:text-indigo-300 font-semibold flex items-center justify-center gap-1 mx-auto">
+            <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i> Back to Sign In
+          </button>
         </div>
       </div>
 

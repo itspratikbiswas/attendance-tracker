@@ -996,6 +996,37 @@ class AttendanceApp {
     }
   }
 
+  handleForgotPassword(e) {
+    e.preventDefault();
+    const identifier = document.getElementById('forgot-identifier').value;
+    const newPass = document.getElementById('forgot-new-password').value;
+    const confirmPass = document.getElementById('forgot-confirm-password').value;
+
+    if (newPass !== confirmPass) {
+      this.showToast('Passwords do not match.', 'error');
+      return;
+    }
+
+    if (newPass.length < 4) {
+      this.showToast('Password must be at least 4 characters long.', 'error');
+      return;
+    }
+
+    try {
+      this.storage.resetPassword(identifier, newPass);
+      this.showToast('Password updated successfully! Please sign in.', 'success');
+      
+      // Switch back to login
+      document.getElementById('auth-forgot-box').classList.add('hidden');
+      document.getElementById('auth-login-box').classList.remove('hidden');
+      
+      const loginId = document.getElementById('login-identifier');
+      if (loginId) loginId.value = identifier;
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
+  }
+
   loginDemoUser(userId = 'usr_demo_101') {
     const users = this.storage.getUsers();
     const user = users.find(u => u.id === userId) || users[0];
@@ -1085,13 +1116,26 @@ class AttendanceApp {
     // Auth form submissions
     document.getElementById('form-login')?.addEventListener('submit', (e) => this.handleLogin(e));
     document.getElementById('form-register')?.addEventListener('submit', (e) => this.handleRegister(e));
+    document.getElementById('form-forgot')?.addEventListener('submit', (e) => this.handleForgotPassword(e));
     
-    // Auth tabs (Login vs Sign Up)
+    // Auth tabs (Login vs Sign Up vs Forgot)
     document.getElementById('btn-show-signup')?.addEventListener('click', () => {
       document.getElementById('auth-login-box').classList.add('hidden');
+      document.getElementById('auth-forgot-box').classList.add('hidden');
       document.getElementById('auth-signup-box').classList.remove('hidden');
     });
     document.getElementById('btn-show-login')?.addEventListener('click', () => {
+      document.getElementById('auth-signup-box').classList.add('hidden');
+      document.getElementById('auth-forgot-box').classList.add('hidden');
+      document.getElementById('auth-login-box').classList.remove('hidden');
+    });
+    document.getElementById('btn-show-forgot')?.addEventListener('click', () => {
+      document.getElementById('auth-login-box').classList.add('hidden');
+      document.getElementById('auth-signup-box').classList.add('hidden');
+      document.getElementById('auth-forgot-box').classList.remove('hidden');
+    });
+    document.getElementById('btn-forgot-back-login')?.addEventListener('click', () => {
+      document.getElementById('auth-forgot-box').classList.add('hidden');
       document.getElementById('auth-signup-box').classList.add('hidden');
       document.getElementById('auth-login-box').classList.remove('hidden');
     });
