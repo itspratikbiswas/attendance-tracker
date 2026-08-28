@@ -849,6 +849,8 @@ class AttendanceApp {
     document.getElementById('slot-input-end').value = '10:30';
     document.getElementById('slot-input-room').value = '';
     document.getElementById('slot-input-instructor').value = '';
+    document.getElementById('slot-input-subject-custom').value = '';
+    document.getElementById('slot-subject-hint').classList.add('hidden');
 
     const modal = document.getElementById('add-slot-modal');
     modal.classList.remove('hidden');
@@ -870,6 +872,8 @@ class AttendanceApp {
     document.getElementById('slot-editing-id').value = slotId;
     document.getElementById('slot-modal-title').textContent = 'Edit Class Slot';
     document.getElementById('slot-save-btn').textContent = 'Update Slot';
+    document.getElementById('slot-input-subject-custom').value = '';
+    document.getElementById('slot-subject-hint').classList.add('hidden');
 
     const modal = document.getElementById('add-slot-modal');
     modal.classList.remove('hidden');
@@ -878,6 +882,13 @@ class AttendanceApp {
     const subSelect = document.getElementById('slot-input-subject');
     const subjects = this.storage.getSubjects();
     subSelect.innerHTML = subjects.map(s => `<option value="${s.id}"${s.id === slot.subjectId ? ' selected' : ''}>${s.name} (${s.code || ''})</option>`).join('');
+
+    // If subject not in list (deleted?), show its name in the custom field
+    const found = subjects.find(s => s.id === slot.subjectId);
+    if (!found) {
+      document.getElementById('slot-input-subject-custom').value = slot.subjectName || '';
+      document.getElementById('slot-subject-hint').classList.remove('hidden');
+    }
 
     // Prefill fields
     const daySelect = document.getElementById('slot-input-day');
@@ -895,20 +906,48 @@ class AttendanceApp {
   }
 
   saveManualSlot() {
-    const subjectId = document.getElementById('slot-input-subject').value;
     const day = document.getElementById('slot-input-day').value;
     const startTime = document.getElementById('slot-input-start').value;
     const endTime = document.getElementById('slot-input-end').value;
     const room = document.getElementById('slot-input-room').value;
     const instructor = document.getElementById('slot-input-instructor').value;
     const editingId = document.getElementById('slot-editing-id').value;
+    const customName = document.getElementById('slot-input-subject-custom').value.trim();
 
-    if (!subjectId || !startTime || !endTime) {
+    if (!startTime || !endTime) {
       this.showToast('Please fill out all required time fields', 'error');
       return;
     }
 
     const duration = this.ingestionService.calculateHoursDiff(startTime, endTime);
+
+    // Resolve subject: custom text input takes priority over dropdown
+    let subjectId = document.getElementById('slot-input-subject').value;
+    if (customName) {
+      const userData = this.storage.getUserData();
+      const existing = (userData.subjects || []).find(s => s.name.toLowerCase() === customName.toLowerCase());
+      if (existing) {
+        subjectId = existing.id;
+      } else {
+        // Create a brand new subject
+        const colors = ['#6366f1', '#06b6d4', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6'];
+        const newSub = {
+          id: `sub_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+          name: customName,
+          code: customName.split(' ').map(w => w[0]).join('').toUpperCase().substring(0, 5) + '-NEW',
+          color: colors[(userData.subjects || []).length % colors.length],
+          icon: 'book'
+        };
+        userData.subjects = [...(userData.subjects || []), newSub];
+        this.storage.saveUserData(userData);
+        subjectId = newSub.id;
+      }
+    }
+
+    if (!subjectId) {
+      this.showToast('Please select or type a subject name', 'error');
+      return;
+    }
 
     if (editingId) {
       // Update existing slot

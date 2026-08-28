@@ -722,6 +722,15 @@
           <label class="block text-xs font-medium text-slate-400 mb-1">Subject</label>
           <select id="slot-input-subject"
             class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-xs text-white focus:outline-none focus:border-indigo-500"></select>
+          <div class="flex items-center gap-2 my-2">
+            <div class="flex-1 h-px bg-slate-700"></div>
+            <span class="text-[10px] text-slate-500 uppercase tracking-wider">or type custom name</span>
+            <div class="flex-1 h-px bg-slate-700"></div>
+          </div>
+          <input type="text" id="slot-input-subject-custom" placeholder="e.g. Applied Chemistry"
+            class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+            oninput="document.getElementById('slot-subject-hint').classList.toggle('hidden', !this.value)">
+          <p id="slot-subject-hint" class="hidden text-[11px] text-indigo-400 mt-1">✨ A new subject will be created with this name.</p>
         </div>
         <div>
           <label class="block text-xs font-medium text-slate-400 mb-1">Day of Week</label>
