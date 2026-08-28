@@ -2,6 +2,7 @@
  * Main Application Controller
  * Handles UI interactions, reactive views, auth states, timetable, attendance logs, and analytics.
  */
+import { GoogleGenAI } from '@google/genai';
 
 document.addEventListener('DOMContentLoaded', () => {
   window.app = new AttendanceApp();
@@ -372,7 +373,7 @@ class AttendanceApp {
                 <span class="text-xs text-gray-500">•</span>
                 <span class="text-xs text-indigo-400 font-medium">${slot.room || 'Room 101'}</span>
               </div>
-              <h5 class="text-base font-semibold text-white mt-0.5">${subject.name}</h5>
+              h5 class="text-base font-semibold text-white mt-0.5">${subject.name}</h5>
               <div class="text-xs text-gray-400 mt-0.5">Instructor: ${slot.instructor || 'Faculty'}</div>
             </div>
           </div>
@@ -551,11 +552,9 @@ class AttendanceApp {
 
     if (!canvasTrend || !canvasDist || typeof Chart === 'undefined') return;
 
-    // Destroy previous charts if existing
     if (this.attendanceChart) this.attendanceChart.destroy();
     if (this.distributionChart) this.distributionChart.destroy();
 
-    // Chart 1: Subject Attendance Comparison (Bar Chart)
     const labels = metrics.subjects.map(s => s.name.length > 18 ? s.name.substring(0, 18) + '...' : s.name);
     const percentages = metrics.subjects.map(s => s.percentage);
     const bgColors = metrics.subjects.map(s => s.percentage >= metrics.targetPercent ? 'rgba(16, 185, 129, 0.7)' : 'rgba(244, 63, 94, 0.7)');
@@ -599,7 +598,6 @@ class AttendanceApp {
       }
     });
 
-    // Chart 2: Present vs Absent vs Cancelled Units (Doughnut)
     const overall = metrics.overall;
     this.distributionChart = new Chart(canvasDist, {
       type: 'doughnut',
@@ -607,11 +605,7 @@ class AttendanceApp {
         labels: ['Attended Units', 'Absent Units', 'Cancelled Units'],
         datasets: [{
           data: [overall.attendedUnits, (metrics.mode === 'hour' ? overall.absentHours : overall.absentCount), overall.cancelledUnits],
-          backgroundColor: [
-            '#10b981', // Emerald
-            '#f43f5e', // Rose
-            '#6b7280'  // Gray
-          ],
+          backgroundColor: ['#10b981', '#f43f5e', '#6b7280'],
           borderColor: '#111827',
           borderWidth: 3
         }]
@@ -634,7 +628,6 @@ class AttendanceApp {
   quickMark(subjectId, status, durationHours = 1.0, dateStr = null) {
     this.storage.markAttendance(subjectId, status, durationHours, dateStr);
     
-    // Check if celebration triggered (safe milestone reached)
     const metrics = window.MetricsEngine.computeAllMetrics(this.storage.getUserData());
     if (metrics.overall.percentage >= metrics.targetPercent && status === 'present') {
       if (typeof confetti === 'function') {
@@ -677,7 +670,7 @@ class AttendanceApp {
     this.renderAnalytics();
   }
 
-  // --- MODALS & ROUTINE INGESTION ---
+  // --- MODALS & ROUTINE INGESTION ENGINE ---
   openRoutineModal() {
     document.getElementById('routine-modal').classList.remove('hidden');
     this.extractedRoutineCache = [];
@@ -691,32 +684,47 @@ class AttendanceApp {
     document.getElementById('routine-modal').classList.add('hidden');
   }
 
-  async handleRoutineFileUpload(file) {
-    if (!file) return;
+  async handleRoutineFileUpload(files) {
+    if (!files || files.length === 0) return;
+    const file = files[0];
 
     const loader = document.getElementById('routine-parsing-loader');
     const uploadZone = document.getElementById('routine-upload-zone');
     const settings = this.storage.getSettings();
 
-    loader.classList.remove('hidden');
-    uploadZone.classList.add('opacity-50', 'pointer-events-none');
+    if (loader) loader.classList.remove('hidden');
+    if (uploadZone) uploadZone.classList.add('opacity-50', 'pointer-events-none');
 
     try {
-      const result = await this.ingestionService.processRoutineFile(
-        file,
-        settings.geminiApiKey || '',
-        settings.trackingMode || 'hour'
-      );
+      let result = null;
+
+      // Check if file is an image to trigger Gemini Flash OCR
+      if (file.type.startsWith('image/')) {
+        const extractedText = await this.processScheduleOCR(file);
+        
+        if (!extractedText) {
+          throw new Error("Could not extract any content from the document image snapshot files.");
+        }
+
+        result = await this.ingestionService.parseTextWithAIStructure(extractedText, settings.trackingMode || 'hour');
+      } else {
+        // Document falls back to default local ingestors
+        result = await this.ingestionService.processRoutineFile(
+          file,
+          settings.geminiApiKey || '',
+          settings.trackingMode || 'hour'
+        );
+      }
 
       this.extractedRoutineCache = result.routine;
       this.renderExtractedRoutinePreview(result);
-      this.showToast(`Routine successfully parsed via ${result.source}!`, 'success');
+      this.showToast(`Routine successfully parsed via ${result.source || 'Gemini Flash AI'}!`, 'success');
     } catch (err) {
       console.error(err);
       this.showToast(`Parsing error: ${err.message}`, 'error');
     } finally {
-      loader.classList.add('hidden');
-      uploadZone.classList.remove('opacity-50', 'pointer-events-none');
+      if (loader) loader.classList.add('hidden');
+      if (uploadZone) uploadZone.classList.remove('opacity-50', 'pointer-events-none');
     }
   }
 
@@ -743,7 +751,7 @@ class AttendanceApp {
         <td class="py-2.5 px-3 font-semibold text-indigo-300">${slot.subjectName}</td>
         <td class="py-2.5 px-3 text-gray-400">${slot.startTime} - ${slot.endTime}</td>
         <td class="py-2.5 px-3 font-mono text-emerald-400 font-semibold">${slot.durationHours} hrs</td>
-        <td class="py-2.5 px-3 text-gray-400">${slot.room}</td>
+        <td class="py-2.5 px-3 text-gray-400">${slot.room || 'N/A'}</td>
         <td class="py-2.5 px-3 text-right">
           <button onclick="app.removeExtractedSlot(${index})" class="text-rose-400 hover:text-rose-300">
             <i data-lucide="trash" class="w-3.5 h-3.5"></i>
@@ -773,7 +781,6 @@ class AttendanceApp {
     const existingSubjects = userData.subjects || [];
     const colors = ['#6366f1', '#06b6d4', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6'];
 
-    // Auto-create subjects if they don't exist
     const newTimetable = [];
     this.extractedRoutineCache.forEach(slot => {
       let sub = existingSubjects.find(s => s.name.toLowerCase() === slot.subjectName.toLowerCase());
@@ -781,7 +788,7 @@ class AttendanceApp {
         sub = {
           id: `sub_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
           name: slot.subjectName,
-          code: slot.subjectCode || 'CS-101',
+          code: slot.subjectCode || 'COURSE',
           color: colors[existingSubjects.length % colors.length],
           icon: 'book'
         };
@@ -795,8 +802,8 @@ class AttendanceApp {
         startTime: slot.startTime,
         endTime: slot.endTime,
         durationHours: slot.durationHours,
-        room: slot.room,
-        instructor: slot.instructor
+        room: slot.room || 'Room 101',
+        instructor: slot.instructor || 'Faculty'
       });
     });
 
@@ -895,15 +902,19 @@ class AttendanceApp {
     document.getElementById('settings-modal').classList.add('hidden');
   }
 
+  // =========================================================================
+  // INTEGRATIONS GATEWAY FUNCTIONS (GEMINI OCR & SUPABASE SYNC)
+  // =========================================================================
+
   saveSettingsForm() {
-    const apiKey = document.getElementById('setting-gemini-api-key').value;
-    const supaUrl = document.getElementById('setting-supabase-url').value;
-    const supaKey = document.getElementById('setting-supabase-key').value;
+    const apiKey = document.getElementById('setting-gemini-api-key').value.trim();
+    const supaUrl = document.getElementById('setting-supabase-url').value.trim();
+    const supaKey = document.getElementById('setting-supabase-key').value.trim();
 
     this.storage.updateSettings({
-      geminiApiKey: apiKey.trim(),
-      supabaseUrl: supaUrl.trim(),
-      supabaseAnonKey: supaKey.trim()
+      geminiApiKey: apiKey,
+      supabaseUrl: supaUrl,
+      supabaseAnonKey: supaKey
     });
 
     this.closeSettingsModal();
@@ -911,13 +922,13 @@ class AttendanceApp {
   }
 
   async testGeminiKey() {
-    const apiKey = document.getElementById('setting-gemini-api-key').value;
+    const apiKey = document.getElementById('setting-gemini-api-key').value.trim();
     const statusBox = document.getElementById('gemini-test-status');
 
-    if (!apiKey || apiKey.trim().length < 10) {
+    if (!apiKey || apiKey.length < 10) {
       if (statusBox) {
         statusBox.className = 'mt-2 text-xs p-2.5 rounded-xl border bg-rose-950/60 text-rose-300 border-rose-500/40 block';
-        statusBox.innerHTML = '<span class="font-semibold">⚠️ Please enter an API key first</span> (starts with AIzaSy... or AQ.Ab8RN...)';
+        statusBox.innerHTML = '<span class="font-semibold">⚠️ Please enter an API key first</span>';
       }
       this.showToast('Please enter an API key to test.', 'error');
       return;
@@ -930,13 +941,19 @@ class AttendanceApp {
     this.showToast('Testing connection with Google Gemini...', 'info');
 
     try {
-      const result = await this.ingestionService.testApiKey(apiKey.trim());
-      const modelName = result?.model || 'Gemini 2.0 Flash';
-      if (statusBox) {
-        statusBox.className = 'mt-2 text-xs p-2.5 rounded-xl border bg-emerald-950/60 text-emerald-300 border-emerald-500/40 block';
-        statusBox.innerHTML = `✅ <b>Connected successfully!</b> Active Model: <span class="font-mono text-white">${modelName}</span>. Ready for routine image OCR!`;
+      const ai = new GoogleGenAI({ apiKey: apiKey });
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: 'Respond with exactly one word: Connected',
+      });
+
+      if (response.text) {
+        if (statusBox) {
+          statusBox.className = 'mt-2 text-xs p-2.5 rounded-xl border bg-emerald-950/60 text-emerald-300 border-emerald-500/40 block';
+          statusBox.innerHTML = `✅ <b>Connected successfully!</b> Active Model: <span class="font-mono text-white">Gemini 2.5 Flash</span>. Ready for routine image OCR!`;
+        }
+        this.showToast('Gemini API key is valid & working perfectly!', 'success');
       }
-      this.showToast('Gemini API key is valid & working perfectly!', 'success');
     } catch (err) {
       console.error(err);
       if (statusBox) {
@@ -947,15 +964,49 @@ class AttendanceApp {
     }
   }
 
+  async processScheduleOCR(imageFile) {
+    const settings = this.storage.getSettings();
+    const activeKey = settings.geminiApiKey;
+    
+    if (!activeKey) {
+      this.showToast("OCR Failed: Gemini API Key configuration missing.", "error");
+      throw new Error("Missing credentials");
+    }
+
+    const base64Data = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = error => reject(error);
+      reader.readAsDataURL(imageFile);
+    });
+
+    try {
+      this.showToast("Ingesting schedule document via AI...", "info");
+      const ai = new GoogleGenAI({ apiKey: activeKey });
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [
+          { inlineData: { mimeType: imageFile.type, data: base64Data } },
+          `You are the data engine for OmniAttend. Perform strict OCR on this schedule/attendance sheet image. 
+          Extract all names, calendar days, scheduled work shifts, and metrics accurately. 
+          Structure the output as a clean table or markdown string.`
+        ],
+      });
+
+      return response.text;
+    } catch (error) {
+      console.error("AI Routine Engine Error:", error);
+      throw error;
+    }
+  }
+
   async pushToCloud() {
     try {
-      const supaUrl = document.getElementById('setting-supabase-url').value;
-      const supaKey = document.getElementById('setting-supabase-key').value;
+      const supaUrl = document.getElementById('setting-supabase-url').value.trim();
+      const supaKey = document.getElementById('setting-supabase-key').value.trim();
       if (supaUrl || supaKey) {
-        this.storage.updateSettings({
-          supabaseUrl: supaUrl.trim(),
-          supabaseAnonKey: supaKey.trim()
-        });
+        this.storage.updateSettings({ supabaseUrl: supaUrl, supabaseAnonKey: supaKey });
       }
 
       this.showToast('Syncing data to Supabase cloud...', 'info');
@@ -969,13 +1020,10 @@ class AttendanceApp {
 
   async pullFromCloud() {
     try {
-      const supaUrl = document.getElementById('setting-supabase-url').value;
-      const supaKey = document.getElementById('setting-supabase-key').value;
+      const supaUrl = document.getElementById('setting-supabase-url').value.trim();
+      const supaKey = document.getElementById('setting-supabase-key').value.trim();
       if (supaUrl || supaKey) {
-        this.storage.updateSettings({
-          supabaseUrl: supaUrl.trim(),
-          supabaseAnonKey: supaKey.trim()
-        });
+        this.storage.updateSettings({ supabaseUrl: supaUrl, supabaseAnonKey: supaKey });
       }
 
       this.showToast('Pulling data from Supabase cloud...', 'info');
@@ -1074,7 +1122,6 @@ class AttendanceApp {
       this.storage.resetPassword(identifier, newPass);
       this.showToast('Password updated successfully! Please sign in.', 'success');
       
-      // Switch back to login
       document.getElementById('auth-forgot-box').classList.add('hidden');
       document.getElementById('auth-login-box').classList.remove('hidden');
       
@@ -1171,12 +1218,10 @@ class AttendanceApp {
 
   // --- EVENT BINDINGS ---
   bindEvents() {
-    // Auth form submissions
     document.getElementById('form-login')?.addEventListener('submit', (e) => this.handleLogin(e));
     document.getElementById('form-register')?.addEventListener('submit', (e) => this.handleRegister(e));
     document.getElementById('form-forgot')?.addEventListener('submit', (e) => this.handleForgotPassword(e));
     
-    // Auth tabs (Login vs Sign Up vs Forgot)
     document.getElementById('btn-show-signup')?.addEventListener('click', () => {
       document.getElementById('auth-login-box').classList.add('hidden');
       document.getElementById('auth-forgot-box').classList.add('hidden');
@@ -1198,21 +1243,17 @@ class AttendanceApp {
       document.getElementById('auth-login-box').classList.remove('hidden');
     });
 
-    // Tracking mode buttons
     document.querySelectorAll('.mode-toggle-btn').forEach(btn => {
       btn.addEventListener('click', () => this.setTrackingMode(btn.dataset.mode));
     });
 
-    // Target slider
     const slider = document.getElementById('target-attendance-slider');
     slider?.addEventListener('input', (e) => this.setTargetAttendance(e.target.value));
 
-    // Nav tabs
     document.querySelectorAll('.nav-tab').forEach(tab => {
       tab.addEventListener('click', () => this.switchTab(tab.dataset.tab));
     });
 
-    // Routine Dropzone
     const dropzone = document.getElementById('routine-upload-zone');
     const fileInput = document.getElementById('routine-file-input');
 
@@ -1235,15 +1276,14 @@ class AttendanceApp {
 
       dropzone.addEventListener('drop', (e) => {
         const files = e.dataTransfer.files;
-        if (files.length > 0) this.handleRoutineFileUpload(files[0]);
+        if (files.length > 0) this.handleRoutineFileUpload(files);
       });
 
       fileInput.addEventListener('change', (e) => {
-        if (e.target.files.length > 0) this.handleRoutineFileUpload(e.target.files[0]);
+        if (e.target.files.length > 0) this.handleRoutineFileUpload(e.target.files);
       });
     }
 
-    // Filter changes in history log
     document.getElementById('history-filter-subject')?.addEventListener('change', () => this.renderHistoryLog());
     document.getElementById('history-filter-status')?.addEventListener('change', () => this.renderHistoryLog());
   }
