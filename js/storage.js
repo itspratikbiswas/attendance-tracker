@@ -9,6 +9,11 @@ const STORAGE_KEYS = {
   GLOBAL_CONFIG: 'attend_tracker_config_v2'
 };
 
+const DEFAULT_SUPABASE_CONFIG = {
+  url: 'https://unnivvoxhgtijjxwgeue.supabase.co',
+  anonKey: 'sb_publishable_Fr2_aI_2cBK53lOem-fayA_DMZzpBoj'
+};
+
 class StorageService {
   constructor() {
     this.currentUser = null;
@@ -214,6 +219,20 @@ class StorageService {
 
     localStorage.setItem(this.getUserStorageKey(newUser.id), JSON.stringify(blankData));
     
+    // Auto sync new account to Supabase Cloud
+    const client = this.getSupabaseClient();
+    if (client) {
+      client.from('omniattend_user_sync').upsert([{
+        user_id: newUser.id,
+        user_email: newUser.email,
+        user_name: newUser.name,
+        username: newUser.username,
+        password: newUser.password,
+        user_data: blankData,
+        updated_at: new Date().toISOString()
+      }], { onConflict: 'user_email' }).then(() => {}).catch(err => console.warn('Cloud register sync error:', err));
+    }
+
     // Auto login
     this.setSession(newUser);
     return newUser;
@@ -333,9 +352,10 @@ class StorageService {
     }
   }
 
-  saveUserData(data) {
-    if (!this.currentUser) return false;
-    const key = this.getUserStorageKey(this.currentUser.id);
+  saveUserData(data, specificUserId = null) {
+    const uid = specificUserId || (this.currentUser ? this.currentUser.id : null);
+    if (!uid) return false;
+    const key = this.getUserStorageKey(uid);
     localStorage.setItem(key, JSON.stringify(data));
     return true;
   }
@@ -496,12 +516,15 @@ class StorageService {
   // --- SUPABASE CLOUD BACKEND INTEGRATION ---
   getSupabaseClient() {
     const settings = this.getSettings();
-    if (!settings.supabaseUrl || !settings.supabaseAnonKey) {
+    const url = settings?.supabaseUrl || DEFAULT_SUPABASE_CONFIG.url;
+    const key = settings?.supabaseAnonKey || DEFAULT_SUPABASE_CONFIG.anonKey;
+
+    if (!url || !key) {
       return null;
     }
     if (window.supabase && typeof window.supabase.createClient === 'function') {
       try {
-        return window.supabase.createClient(settings.supabaseUrl, settings.supabaseAnonKey);
+        return window.supabase.createClient(url, key);
       } catch (e) {
         console.error('Supabase initialization failed:', e);
         return null;

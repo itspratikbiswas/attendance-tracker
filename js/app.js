@@ -1189,7 +1189,7 @@ class AttendanceApp {
     }
   }
 
-  handleRegister(e) {
+  async handleRegister(e) {
     e.preventDefault();
     const name = document.getElementById('reg-name').value;
     const email = document.getElementById('reg-email').value;
@@ -1198,7 +1198,7 @@ class AttendanceApp {
     const role = document.getElementById('reg-role').value;
 
     try {
-      this.storage.register(name, email, username, password, role);
+      await this.storage.register(name, email, username, password, role);
       this.showToast('Account created successfully!', 'success');
       this.checkAuthState();
     } catch (err) {
