@@ -380,6 +380,11 @@ class AttendanceApp {
           <div class="flex items-center gap-3 justify-between md:justify-end">
             ${statusBadge}
             <div class="flex items-center gap-1">
+              <button onclick="app.openEditSlotModal('${slot.id}')"
+                      title="Edit class"
+                      class="btn-interactive p-2 bg-slate-800 hover:bg-indigo-700 text-slate-400 hover:text-white rounded-lg border border-slate-700 transition">
+                <i data-lucide="pencil" class="w-4 h-4"></i>
+              </button>
               <button onclick="app.quickMark('${slot.subjectId}', 'present', ${slot.durationHours}, '${todayDateStr}')" 
                       title="Present"
                       class="btn-interactive p-2 bg-emerald-950/40 hover:bg-emerald-600 text-emerald-400 hover:text-white rounded-lg border border-emerald-500/30 transition">
@@ -444,9 +449,14 @@ class AttendanceApp {
                       <span class="text-[11px] font-mono text-indigo-400 font-medium">${slot.startTime} - ${slot.endTime} (${slot.durationHours}h)</span>
                       <h5 class="text-sm font-semibold text-gray-200 leading-tight mt-0.5">${sub.name}</h5>
                     </div>
-                    <button onclick="app.deleteSlot('${slot.id}')" title="Delete slot" class="text-gray-500 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition p-1">
-                      <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-                    </button>
+                    <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                      <button onclick="app.openEditSlotModal('${slot.id}')" title="Edit slot" class="text-gray-500 hover:text-indigo-400 p-1">
+                        <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                      </button>
+                      <button onclick="app.deleteSlot('${slot.id}')" title="Delete slot" class="text-gray-500 hover:text-rose-400 p-1">
+                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                      </button>
+                    </div>
                   </div>
                   <div class="flex items-center justify-between text-[11px] text-gray-400 mt-2">
                     <span class="flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3"></i> ${slot.room || 'Hall'}</span>
@@ -831,6 +841,15 @@ class AttendanceApp {
 
   // --- MANUAL SLOT MODAL ---
   openAddSlotModal(prefilledDay = 'Monday') {
+    // Reset to Add mode
+    document.getElementById('slot-editing-id').value = '';
+    document.getElementById('slot-modal-title').textContent = 'Add Scheduled Class Slot';
+    document.getElementById('slot-save-btn').textContent = 'Save Slot';
+    document.getElementById('slot-input-start').value = '09:00';
+    document.getElementById('slot-input-end').value = '10:30';
+    document.getElementById('slot-input-room').value = '';
+    document.getElementById('slot-input-instructor').value = '';
+
     const modal = document.getElementById('add-slot-modal');
     modal.classList.remove('hidden');
 
@@ -840,6 +859,35 @@ class AttendanceApp {
     const subSelect = document.getElementById('slot-input-subject');
     const subjects = this.storage.getSubjects();
     subSelect.innerHTML = subjects.map(s => `<option value="${s.id}">${s.name} (${s.code || ''})</option>`).join('');
+  }
+
+  openEditSlotModal(slotId) {
+    const userData = this.storage.getUserData();
+    const slot = (userData.timetable || []).find(t => t.id === slotId);
+    if (!slot) return;
+
+    // Switch to Edit mode
+    document.getElementById('slot-editing-id').value = slotId;
+    document.getElementById('slot-modal-title').textContent = 'Edit Class Slot';
+    document.getElementById('slot-save-btn').textContent = 'Update Slot';
+
+    const modal = document.getElementById('add-slot-modal');
+    modal.classList.remove('hidden');
+
+    // Populate subject dropdown
+    const subSelect = document.getElementById('slot-input-subject');
+    const subjects = this.storage.getSubjects();
+    subSelect.innerHTML = subjects.map(s => `<option value="${s.id}"${s.id === slot.subjectId ? ' selected' : ''}>${s.name} (${s.code || ''})</option>`).join('');
+
+    // Prefill fields
+    const daySelect = document.getElementById('slot-input-day');
+    if (daySelect) daySelect.value = slot.day || 'Monday';
+    document.getElementById('slot-input-start').value = slot.startTime || '09:00';
+    document.getElementById('slot-input-end').value = slot.endTime || '10:30';
+    document.getElementById('slot-input-room').value = slot.room || '';
+    document.getElementById('slot-input-instructor').value = slot.instructor || '';
+
+    if (window.lucide) window.lucide.createIcons();
   }
 
   closeAddSlotModal() {
@@ -853,6 +901,7 @@ class AttendanceApp {
     const endTime = document.getElementById('slot-input-end').value;
     const room = document.getElementById('slot-input-room').value;
     const instructor = document.getElementById('slot-input-instructor').value;
+    const editingId = document.getElementById('slot-editing-id').value;
 
     if (!subjectId || !startTime || !endTime) {
       this.showToast('Please fill out all required time fields', 'error');
@@ -861,19 +910,41 @@ class AttendanceApp {
 
     const duration = this.ingestionService.calculateHoursDiff(startTime, endTime);
 
-    this.storage.addTimetableSlot({
-      subjectId,
-      day,
-      startTime,
-      endTime,
-      durationHours: duration,
-      room: room || 'Room 101',
-      instructor: instructor || 'Faculty'
-    });
-
-    this.closeAddSlotModal();
-    this.showToast('Timetable slot added!', 'success');
-    this.renderAllViews();
+    if (editingId) {
+      // Update existing slot
+      const userData = this.storage.getUserData();
+      const idx = (userData.timetable || []).findIndex(t => t.id === editingId);
+      if (idx !== -1) {
+        userData.timetable[idx] = {
+          ...userData.timetable[idx],
+          subjectId,
+          day,
+          startTime,
+          endTime,
+          durationHours: duration,
+          room: room || 'Room 101',
+          instructor: instructor || 'Faculty'
+        };
+        this.storage.saveUserData(userData);
+        this.closeAddSlotModal();
+        this.showToast('Class slot updated!', 'success');
+        this.renderAllViews();
+      }
+    } else {
+      // Add new slot
+      this.storage.addTimetableSlot({
+        subjectId,
+        day,
+        startTime,
+        endTime,
+        durationHours: duration,
+        room: room || 'Room 101',
+        instructor: instructor || 'Faculty'
+      });
+      this.closeAddSlotModal();
+      this.showToast('Timetable slot added!', 'success');
+      this.renderAllViews();
+    }
   }
 
   // --- ADD SUBJECT MODAL ---

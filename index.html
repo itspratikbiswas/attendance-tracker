@@ -711,8 +711,9 @@
   <div id="add-slot-modal"
     class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md hidden modal-overlay">
     <div class="glass-panel max-w-md w-full p-6 rounded-3xl border border-slate-800 shadow-2xl modal-content">
+      <input type="hidden" id="slot-editing-id" value="">
       <div class="flex items-center justify-between pb-3 border-b border-slate-800">
-        <h3 class="text-base font-bold text-white">Add Scheduled Class Slot</h3>
+        <h3 id="slot-modal-title" class="text-base font-bold text-white">Add Scheduled Class Slot</h3>
         <button onclick="app.closeAddSlotModal()" class="text-slate-400 hover:text-white"><i data-lucide="x"
             class="w-4 h-4"></i></button>
       </div>
@@ -762,9 +763,8 @@
       <div class="pt-3 border-t border-slate-800 flex justify-end gap-2">
         <button onclick="app.closeAddSlotModal()"
           class="px-3 py-1.5 bg-slate-800 text-slate-300 text-xs rounded-xl">Cancel</button>
-        <button onclick="app.saveManualSlot()"
-          class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl">Save
-          Slot</button>
+        <button id="slot-save-btn" onclick="app.saveManualSlot()"
+          class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl">Save Slot</button>
       </div>
     </div>
   </div>
