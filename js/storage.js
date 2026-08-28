@@ -219,17 +219,59 @@ class StorageService {
     return newUser;
   }
 
-  login(identifier, password) {
+  async login(identifier, password) {
     const users = this.getUsers();
     const idClean = identifier.trim().toLowerCase();
     
-    const user = users.find(u => 
+    // 1. Check local device storage
+    let user = users.find(u => 
       (u.email.toLowerCase() === idClean || u.username.toLowerCase() === idClean) && 
       u.password === password
     );
 
+    // 2. If not found locally on this device, check Supabase Cloud
     if (!user) {
-      throw new Error('Invalid email/username or password.');
+      const client = this.getSupabaseClient();
+      if (client) {
+        try {
+          const { data, error } = await client
+            .from('omniattend_user_sync')
+            .select('*')
+            .or(`user_email.eq.${idClean},username.eq.${idClean}`)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (data && data.password === password) {
+            // Reconstruct user account locally on this new device
+            user = {
+              id: data.user_id,
+              name: data.user_name || 'Student',
+              email: data.user_email || idClean,
+              username: data.username || idClean,
+              password: data.password,
+              role: 'Student',
+              avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${data.username || idClean}`,
+              createdAt: data.updated_at
+            };
+
+            // Save user to device local storage
+            users.push(user);
+            localStorage.setItem(STORAGE_KEYS.USERS_LIST, JSON.stringify(users));
+
+            // Auto-restore timetable and attendance records
+            if (data.user_data) {
+              this.saveUserData(data.user_data, user.id);
+            }
+          }
+        } catch (cloudErr) {
+          console.warn('Cloud login lookup error:', cloudErr);
+        }
+      }
+    }
+
+    if (!user) {
+      throw new Error('Invalid email/username or password. If registered on another device, make sure you configured Cloud Sync.');
     }
 
     this.setSession(user);
@@ -476,10 +518,15 @@ class StorageService {
 
     const userData = this.getUserData();
     const userEmail = (this.currentUser.email || '').toLowerCase().trim();
+    const users = this.getUsers();
+    const account = users.find(u => u.id === this.currentUser.id) || {};
+
     const payload = {
       user_id: this.currentUser.id,
       user_email: userEmail,
       user_name: this.currentUser.name,
+      username: (account.username || this.currentUser.username || '').toLowerCase().trim(),
+      password: account.password || '',
       user_data: userData,
       updated_at: new Date().toISOString()
     };

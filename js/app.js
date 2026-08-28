@@ -1163,17 +1163,29 @@ class AttendanceApp {
   }
 
   // --- AUTH METHODS ---
-  handleLogin(e) {
+  async handleLogin(e) {
     e.preventDefault();
     const id = document.getElementById('login-identifier').value;
     const pass = document.getElementById('login-password').value;
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const originalText = submitBtn ? submitBtn.innerHTML : 'Sign In';
+
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span class="inline-block animate-spin mr-2">⏳</span> Verifying credentials...';
+    }
 
     try {
-      this.storage.login(id, pass);
-      this.showToast('Welcome back!', 'success');
+      await this.storage.login(id, pass);
+      this.showToast('Welcome back! Logged in successfully.', 'success');
       this.checkAuthState();
     } catch (err) {
       this.showToast(err.message, 'error');
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+      }
     }
   }
 
