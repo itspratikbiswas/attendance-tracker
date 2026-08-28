@@ -372,7 +372,7 @@ class AttendanceApp {
                 <span class="text-xs text-gray-500">•</span>
                 <span class="text-xs text-indigo-400 font-medium">${slot.room || 'Room 101'}</span>
               </div>
-              h5 class="text-base font-semibold text-white mt-0.5">${subject.name}</h5>
+              <h5 class="text-base font-semibold text-white mt-0.5">${subject.name}</h5>
               <div class="text-xs text-gray-400 mt-0.5">Instructor: ${slot.instructor || 'Faculty'}</div>
             </div>
           </div>
@@ -778,22 +778,30 @@ class AttendanceApp {
     }
 
     const userData = this.storage.getUserData();
-    const existingSubjects = userData.subjects || [];
-    const colors = ['#6366f1', '#06b6d4', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6'];
+    const colors = ['#6366f1', '#06b6d4', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6', '#f97316', '#14b8a6'];
 
-    const newTimetable = [];
-    this.extractedRoutineCache.forEach(slot => {
-      let sub = existingSubjects.find(s => s.name.toLowerCase() === slot.subjectName.toLowerCase());
-      if (!sub) {
-        sub = {
+    // Build fresh subjects list from the new routine (replace, don't merge)
+    const newSubjectsMap = new Map();
+    this.extractedRoutineCache.forEach((slot, idx) => {
+      const key = slot.subjectName.toLowerCase().trim();
+      if (!newSubjectsMap.has(key)) {
+        newSubjectsMap.set(key, {
           id: `sub_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
           name: slot.subjectName,
           code: slot.subjectCode || 'COURSE',
-          color: colors[existingSubjects.length % colors.length],
+          color: colors[newSubjectsMap.size % colors.length],
           icon: 'book'
-        };
-        existingSubjects.push(sub);
+        });
       }
+    });
+
+    const newSubjects = Array.from(newSubjectsMap.values());
+
+    const newTimetable = [];
+    this.extractedRoutineCache.forEach(slot => {
+      const key = slot.subjectName.toLowerCase().trim();
+      const sub = newSubjectsMap.get(key);
+      if (!sub) return;
 
       newTimetable.push({
         id: `tt_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
@@ -807,8 +815,13 @@ class AttendanceApp {
       });
     });
 
-    userData.subjects = existingSubjects;
+    // Replace subjects and timetable completely with the new routine
+    userData.subjects = newSubjects;
     userData.timetable = newTimetable;
+    // Clear old attendance records that reference old subject IDs
+    userData.attendanceRecords = (userData.attendanceRecords || []).filter(r =>
+      newSubjects.some(s => s.id === r.subjectId)
+    );
     this.storage.saveUserData(userData);
 
     this.closeRoutineModal();
