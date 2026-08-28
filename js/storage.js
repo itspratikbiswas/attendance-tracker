@@ -475,21 +475,28 @@ class StorageService {
     }
 
     const userData = this.getUserData();
+    const userEmail = (this.currentUser.email || '').toLowerCase().trim();
     const payload = {
       user_id: this.currentUser.id,
-      user_email: this.currentUser.email,
+      user_email: userEmail,
       user_name: this.currentUser.name,
       user_data: userData,
       updated_at: new Date().toISOString()
     };
 
-    // Upsert into omniattend_cloud_store
+    // Upsert into omniattend_user_sync
     const { data, error } = await client
       .from('omniattend_user_sync')
-      .upsert([payload], { onConflict: 'user_id' });
+      .upsert([payload], { onConflict: 'user_email' });
 
     if (error) {
-      throw new Error('Cloud sync failed: ' + error.message);
+      // Fallback without onConflict constraint if table was created with user_id PK
+      const retryRes = await client
+        .from('omniattend_user_sync')
+        .upsert([payload], { onConflict: 'user_id' });
+      if (retryRes.error) {
+        throw new Error('Cloud sync failed: ' + retryRes.error.message);
+      }
     }
     return true;
   }
@@ -500,21 +507,33 @@ class StorageService {
       throw new Error('Supabase URL and Anon Key must be configured in Settings.');
     }
 
-    const { data, error } = await client
+    const userEmail = (this.currentUser.email || '').toLowerCase().trim();
+    
+    // 1. Try pulling by user_email first (cross-device universal match)
+    let { data, error } = await client
       .from('omniattend_user_sync')
       .select('*')
-      .eq('user_id', this.currentUser.id)
-      .single();
+      .eq('user_email', userEmail)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-    if (error) {
-      throw new Error('Cloud pull failed: ' + error.message);
+    // 2. Fallback to user_id match
+    if (!data) {
+      const idRes = await client
+        .from('omniattend_user_sync')
+        .select('*')
+        .eq('user_id', this.currentUser.id)
+        .maybeSingle();
+      data = idRes.data;
     }
 
-    if (data && data.user_data) {
-      this.saveUserData(data.user_data);
-      return data.user_data;
+    if (!data || !data.user_data) {
+      throw new Error('No cloud backup found for this account. Make sure you clicked "Push to Cloud" on your first device.');
     }
-    return null;
+
+    this.saveUserData(data.user_data);
+    return data.user_data;
   }
 }
 
