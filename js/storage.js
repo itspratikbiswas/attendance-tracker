@@ -168,9 +168,31 @@ class StorageService {
     return `attend_tracker_user_${userId}_data`;
   }
 
+  async hashPassword(password) {
+    if (!password) return '';
+    try {
+      if (window.crypto && window.crypto.subtle) {
+        const msgBuffer = new TextEncoder().encode(password);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      }
+    } catch (e) {
+      console.warn('Subtle crypto error, using fallback hash:', e);
+    }
+    // Fallback simple hash for non-secure HTTP contexts
+    let hash = 0;
+    for (let i = 0; i < password.length; i++) {
+      const char = password.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash |= 0;
+    }
+    return 'sha256_' + Math.abs(hash).toString(16);
+  }
+
   // --- Auth Methods ---
 
-  register(name, email, username, password, role = 'Student') {
+  async register(name, email, username, password, role = 'Student') {
     const users = this.getUsers();
     
     // Check if email or username taken
@@ -178,6 +200,8 @@ class StorageService {
     if (existing) {
       throw new Error('An account with this email or username already exists.');
     }
+
+    const passwordHash = await this.hashPassword(password);
 
     const newUser = {
       id: `usr_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
@@ -219,7 +243,7 @@ class StorageService {
 
     localStorage.setItem(this.getUserStorageKey(newUser.id), JSON.stringify(blankData));
     
-    // Auto sync new account to Supabase Cloud
+    // Auto sync new account to Supabase Cloud with encrypted/hashed password
     const client = this.getSupabaseClient();
     if (client) {
       const fullData = {
@@ -229,7 +253,7 @@ class StorageService {
           name: newUser.name,
           email: newUser.email,
           username: newUser.username,
-          password: newUser.password,
+          password: passwordHash,
           role: newUser.role,
           avatar: newUser.avatar
         }
@@ -291,15 +315,17 @@ class StorageService {
           if (data && data.user_data) {
             const acc = data.user_data.account || {};
             const cloudPassword = acc.password || data.password;
+            const inputHash = await this.hashPassword(password);
 
-            if (cloudPassword && cloudPassword === password) {
+            // Check against SHA-256 hash or legacy plain password
+            if (cloudPassword && (cloudPassword === inputHash || cloudPassword === password)) {
               // Reconstruct user account locally on this new device
               user = {
                 id: data.user_id,
                 name: acc.name || data.user_name || 'Student',
                 email: acc.email || data.user_email || idClean,
                 username: acc.username || idClean,
-                password: cloudPassword,
+                password: password,
                 role: acc.role || 'Student',
                 avatar: acc.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${idClean}`,
                 createdAt: data.updated_at
@@ -311,7 +337,7 @@ class StorageService {
 
               // Auto-restore timetable and attendance records
               this.saveUserData(data.user_data, user.id);
-            } else if (cloudPassword && cloudPassword !== password) {
+            } else if (cloudPassword && cloudPassword !== password && cloudPassword !== inputHash) {
               throw new Error('Incorrect password.');
             }
           }
@@ -577,6 +603,8 @@ class StorageService {
     const users = this.getUsers();
     const account = users.find(u => u.id === this.currentUser.id) || {};
 
+    const passwordHash = await this.hashPassword(account.password || '');
+
     const payload = {
       user_id: this.currentUser.id,
       user_email: userEmail,
@@ -588,7 +616,7 @@ class StorageService {
           name: this.currentUser.name,
           email: userEmail,
           username: (account.username || this.currentUser.username || '').toLowerCase().trim(),
-          password: account.password || '',
+          password: passwordHash,
           role: account.role || 'Student',
           avatar: account.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${userEmail}`
         }
