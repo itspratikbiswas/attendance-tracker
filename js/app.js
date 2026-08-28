@@ -2,7 +2,6 @@
  * Main Application Controller
  * Handles UI interactions, reactive views, auth states, timetable, attendance logs, and analytics.
  */
-import { GoogleGenAI } from '@google/genai';
 
 document.addEventListener('DOMContentLoaded', () => {
   window.app = new AttendanceApp();
@@ -48,7 +47,7 @@ class AttendanceApp {
 
   syncControlsWithSettings() {
     const settings = this.storage.getSettings();
-    
+
     // Mode buttons
     const mode = settings.trackingMode || 'hour';
     document.querySelectorAll('.mode-toggle-btn').forEach(btn => {
@@ -437,8 +436,8 @@ class AttendanceApp {
             ${daySlots.length === 0 ? `
               <div class="py-6 text-center text-xs text-gray-500 italic">No classes scheduled</div>
             ` : daySlots.map(slot => {
-              const sub = subjects.find(s => s.id === slot.subjectId) || { name: 'Subject', color: '#6366f1' };
-              return `
+        const sub = subjects.find(s => s.id === slot.subjectId) || { name: 'Subject', color: '#6366f1' };
+        return `
                 <div class="timetable-cell p-3 rounded-lg bg-gray-900/70 border border-gray-800/80 hover:border-indigo-500/40 relative group">
                   <div class="flex items-start justify-between">
                     <div>
@@ -455,7 +454,7 @@ class AttendanceApp {
                   </div>
                 </div>
               `;
-            }).join('')}
+      }).join('')}
           </div>
         </div>
       `;
@@ -509,7 +508,7 @@ class AttendanceApp {
 
     container.innerHTML = filtered.map(rec => {
       const sub = subjects.find(s => s.id === rec.subjectId) || { name: rec.subjectName, color: '#6366f1' };
-      
+
       let badge = '';
       if (rec.status === 'present') {
         badge = `<span class="px-2.5 py-0.5 text-xs font-semibold bg-emerald-950 text-emerald-400 border border-emerald-500/30 rounded-full">Present</span>`;
@@ -627,7 +626,7 @@ class AttendanceApp {
   // --- ACTIONS & MUTATIONS ---
   quickMark(subjectId, status, durationHours = 1.0, dateStr = null) {
     this.storage.markAttendance(subjectId, status, durationHours, dateStr);
-    
+
     const metrics = window.MetricsEngine.computeAllMetrics(this.storage.getUserData());
     if (metrics.overall.percentage >= metrics.targetPercent && status === 'present') {
       if (typeof confetti === 'function') {
@@ -684,6 +683,21 @@ class AttendanceApp {
     document.getElementById('routine-modal').classList.add('hidden');
   }
 
+  async loadProvidedTimetable(e) {
+    if (e) e.stopPropagation();
+    try {
+      this.showToast('Loading timetable (IMG-20260827-WA0001.jpg)...', 'info');
+      const response = await fetch('./IMG-20260827-WA0001.jpg');
+      if (!response.ok) throw new Error('Could not load IMG-20260827-WA0001.jpg');
+      const blob = await response.blob();
+      const file = new File([blob], 'IMG-20260827-WA0001.jpg', { type: 'image/jpeg' });
+      await this.handleRoutineFileUpload([file]);
+    } catch (err) {
+      console.error(err);
+      this.showToast('Error loading timetable file: ' + err.message, 'error');
+    }
+  }
+
   async handleRoutineFileUpload(files) {
     if (!files || files.length === 0) return;
     const file = files[0];
@@ -696,29 +710,15 @@ class AttendanceApp {
     if (uploadZone) uploadZone.classList.add('opacity-50', 'pointer-events-none');
 
     try {
-      let result = null;
-
-      // Check if file is an image to trigger Gemini Flash OCR
-      if (file.type.startsWith('image/')) {
-        const extractedText = await this.processScheduleOCR(file);
-        
-        if (!extractedText) {
-          throw new Error("Could not extract any content from the document image snapshot files.");
-        }
-
-        result = await this.ingestionService.parseTextWithAIStructure(extractedText, settings.trackingMode || 'hour');
-      } else {
-        // Document falls back to default local ingestors
-        result = await this.ingestionService.processRoutineFile(
-          file,
-          settings.geminiApiKey || '',
-          settings.trackingMode || 'hour'
-        );
-      }
+      const result = await this.ingestionService.processRoutineFile(
+        file,
+        settings.geminiApiKey || '',
+        settings.trackingMode || 'hour'
+      );
 
       this.extractedRoutineCache = result.routine;
       this.renderExtractedRoutinePreview(result);
-      this.showToast(`Routine successfully parsed via ${result.source || 'Gemini Flash AI'}!`, 'success');
+      this.showToast(`Routine successfully ingested via ${result.source || 'Schedule Engine'}!`, 'success');
     } catch (err) {
       console.error(err);
       this.showToast(`Parsing error: ${err.message}`, 'error');
@@ -921,6 +921,14 @@ class AttendanceApp {
     this.showToast('Settings & Cloud config saved!', 'success');
   }
 
+     // =========================================================================
+  // INTEGRATIONS GATEWAY FUNCTIONS (GEMINI DIRECT FETCH OCR ENGINE)
+  // =========================================================================
+
+    // =========================================================================
+  // REDESIGNED INTEGRATIONS GATEWAY (CORS-BYPASS REST PROXY ENGINE)
+  // =========================================================================
+
   async testGeminiKey() {
     const apiKey = document.getElementById('setting-gemini-api-key').value.trim();
     const statusBox = document.getElementById('gemini-test-status');
@@ -936,26 +944,23 @@ class AttendanceApp {
 
     if (statusBox) {
       statusBox.className = 'mt-2 text-xs p-2.5 rounded-xl border bg-indigo-950/60 text-indigo-300 border-indigo-500/40 block';
-      statusBox.innerHTML = '<span class="inline-block animate-spin mr-1.5">⏳</span> Connecting to Google Gemini API...';
+      statusBox.innerHTML = '<span class="inline-block animate-spin mr-1.5">⏳</span> Testing connection to Google Gemini API...';
     }
-    this.showToast('Testing connection with Google Gemini...', 'info');
+    this.showToast('Testing API key with Google Gemini...', 'info');
 
     try {
-      const ai = new GoogleGenAI({ apiKey: apiKey });
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: 'Respond with exactly one word: Connected',
-      });
+      const result = await this.ingestionService.testApiKey(apiKey);
 
-      if (response.text) {
-        if (statusBox) {
-          statusBox.className = 'mt-2 text-xs p-2.5 rounded-xl border bg-emerald-950/60 text-emerald-300 border-emerald-500/40 block';
-          statusBox.innerHTML = `✅ <b>Connected successfully!</b> Active Model: <span class="font-mono text-white">Gemini 2.5 Flash</span>. Ready for routine image OCR!`;
-        }
-        this.showToast('Gemini API key is valid & working perfectly!', 'success');
+      if (statusBox) {
+        statusBox.className = 'mt-2 text-xs p-2.5 rounded-xl border bg-emerald-950/60 text-emerald-300 border-emerald-500/40 block';
+        statusBox.innerHTML = `✅ <b>Connected successfully!</b> Active Model: <span class="font-mono text-white">${result.model}</span> (${result.version}). Ready for routine parsing!`;
       }
+      this.showToast('Gemini API key is valid & working perfectly!', 'success');
+      
+      // Auto-save setting if valid
+      this.storage.updateSettings({ geminiApiKey: apiKey });
     } catch (err) {
-      console.error(err);
+      console.error("Gemini Connection Error:", err);
       if (statusBox) {
         statusBox.className = 'mt-2 text-xs p-2.5 rounded-xl border bg-rose-950/60 text-rose-300 border-rose-500/40 block';
         statusBox.innerHTML = `❌ <b>Connection Failed:</b> ${err.message}`;
@@ -964,42 +969,6 @@ class AttendanceApp {
     }
   }
 
-  async processScheduleOCR(imageFile) {
-    const settings = this.storage.getSettings();
-    const activeKey = settings.geminiApiKey;
-    
-    if (!activeKey) {
-      this.showToast("OCR Failed: Gemini API Key configuration missing.", "error");
-      throw new Error("Missing credentials");
-    }
-
-    const base64Data = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result.split(',')[1]);
-      reader.onerror = error => reject(error);
-      reader.readAsDataURL(imageFile);
-    });
-
-    try {
-      this.showToast("Ingesting schedule document via AI...", "info");
-      const ai = new GoogleGenAI({ apiKey: activeKey });
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: [
-          { inlineData: { mimeType: imageFile.type, data: base64Data } },
-          `You are the data engine for OmniAttend. Perform strict OCR on this schedule/attendance sheet image. 
-          Extract all names, calendar days, scheduled work shifts, and metrics accurately. 
-          Structure the output as a clean table or markdown string.`
-        ],
-      });
-
-      return response.text;
-    } catch (error) {
-      console.error("AI Routine Engine Error:", error);
-      throw error;
-    }
-  }
 
   async pushToCloud() {
     try {
@@ -1121,10 +1090,10 @@ class AttendanceApp {
     try {
       this.storage.resetPassword(identifier, newPass);
       this.showToast('Password updated successfully! Please sign in.', 'success');
-      
+
       document.getElementById('auth-forgot-box').classList.add('hidden');
       document.getElementById('auth-login-box').classList.remove('hidden');
-      
+
       const loginId = document.getElementById('login-identifier');
       if (loginId) loginId.value = identifier;
     } catch (err) {
@@ -1221,7 +1190,7 @@ class AttendanceApp {
     document.getElementById('form-login')?.addEventListener('submit', (e) => this.handleLogin(e));
     document.getElementById('form-register')?.addEventListener('submit', (e) => this.handleRegister(e));
     document.getElementById('form-forgot')?.addEventListener('submit', (e) => this.handleForgotPassword(e));
-    
+
     document.getElementById('btn-show-signup')?.addEventListener('click', () => {
       document.getElementById('auth-login-box').classList.add('hidden');
       document.getElementById('auth-forgot-box').classList.add('hidden');
@@ -1259,7 +1228,7 @@ class AttendanceApp {
 
     if (dropzone && fileInput) {
       dropzone.addEventListener('click', () => fileInput.click());
-      
+
       ['dragenter', 'dragover'].forEach(eventName => {
         dropzone.addEventListener(eventName, (e) => {
           e.preventDefault();
