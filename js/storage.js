@@ -222,15 +222,25 @@ class StorageService {
     // Auto sync new account to Supabase Cloud
     const client = this.getSupabaseClient();
     if (client) {
+      const fullData = {
+        ...blankData,
+        account: {
+          id: newUser.id,
+          name: newUser.name,
+          email: newUser.email,
+          username: newUser.username,
+          password: newUser.password,
+          role: newUser.role,
+          avatar: newUser.avatar
+        }
+      };
       client.from('omniattend_user_sync').upsert([{
         user_id: newUser.id,
         user_email: newUser.email,
         user_name: newUser.name,
-        username: newUser.username,
-        password: newUser.password,
-        user_data: blankData,
+        user_data: fullData,
         updated_at: new Date().toISOString()
-      }], { onConflict: 'user_email' }).then(() => {}).catch(err => console.warn('Cloud register sync error:', err));
+      }], { onConflict: 'user_id' }).then(() => {}).catch(err => console.warn('Cloud register sync error:', err));
     }
 
     // Auto login
@@ -253,44 +263,67 @@ class StorageService {
       const client = this.getSupabaseClient();
       if (client) {
         try {
-          const { data, error } = await client
+          // Query Supabase by email first
+          let { data, error } = await client
             .from('omniattend_user_sync')
             .select('*')
-            .or(`user_email.eq.${idClean},username.eq.${idClean}`)
+            .eq('user_email', idClean)
             .order('updated_at', { ascending: false })
             .limit(1)
             .maybeSingle();
 
-          if (data && data.password === password) {
-            // Reconstruct user account locally on this new device
-            user = {
-              id: data.user_id,
-              name: data.user_name || 'Student',
-              email: data.user_email || idClean,
-              username: data.username || idClean,
-              password: data.password,
-              role: 'Student',
-              avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${data.username || idClean}`,
-              createdAt: data.updated_at
-            };
+          // If not found by email, scan all cloud accounts by username/email inside user_data
+          if (!data) {
+            const allRes = await client
+              .from('omniattend_user_sync')
+              .select('*');
+            if (allRes.data && allRes.data.length > 0) {
+              data = allRes.data.find(row => {
+                const acc = row.user_data?.account || {};
+                return (acc.username || '').toLowerCase() === idClean ||
+                       (acc.email || '').toLowerCase() === idClean ||
+                       (row.user_email || '').toLowerCase() === idClean ||
+                       (row.user_name || '').toLowerCase() === idClean;
+              });
+            }
+          }
 
-            // Save user to device local storage
-            users.push(user);
-            localStorage.setItem(STORAGE_KEYS.USERS_LIST, JSON.stringify(users));
+          if (data && data.user_data) {
+            const acc = data.user_data.account || {};
+            const cloudPassword = acc.password || data.password;
 
-            // Auto-restore timetable and attendance records
-            if (data.user_data) {
+            if (cloudPassword && cloudPassword === password) {
+              // Reconstruct user account locally on this new device
+              user = {
+                id: data.user_id,
+                name: acc.name || data.user_name || 'Student',
+                email: acc.email || data.user_email || idClean,
+                username: acc.username || idClean,
+                password: cloudPassword,
+                role: acc.role || 'Student',
+                avatar: acc.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${idClean}`,
+                createdAt: data.updated_at
+              };
+
+              // Save user to device local storage
+              users.push(user);
+              localStorage.setItem(STORAGE_KEYS.USERS_LIST, JSON.stringify(users));
+
+              // Auto-restore timetable and attendance records
               this.saveUserData(data.user_data, user.id);
+            } else if (cloudPassword && cloudPassword !== password) {
+              throw new Error('Incorrect password.');
             }
           }
         } catch (cloudErr) {
+          if (cloudErr.message === 'Incorrect password.') throw cloudErr;
           console.warn('Cloud login lookup error:', cloudErr);
         }
       }
     }
 
     if (!user) {
-      throw new Error('Invalid email/username or password. If registered on another device, make sure you configured Cloud Sync.');
+      throw new Error('Invalid email/username or password.');
     }
 
     this.setSession(user);
@@ -548,25 +581,28 @@ class StorageService {
       user_id: this.currentUser.id,
       user_email: userEmail,
       user_name: this.currentUser.name,
-      username: (account.username || this.currentUser.username || '').toLowerCase().trim(),
-      password: account.password || '',
-      user_data: userData,
+      user_data: {
+        ...userData,
+        account: {
+          id: this.currentUser.id,
+          name: this.currentUser.name,
+          email: userEmail,
+          username: (account.username || this.currentUser.username || '').toLowerCase().trim(),
+          password: account.password || '',
+          role: account.role || 'Student',
+          avatar: account.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${userEmail}`
+        }
+      },
       updated_at: new Date().toISOString()
     };
 
     // Upsert into omniattend_user_sync
     const { data, error } = await client
       .from('omniattend_user_sync')
-      .upsert([payload], { onConflict: 'user_email' });
+      .upsert([payload], { onConflict: 'user_id' });
 
     if (error) {
-      // Fallback without onConflict constraint if table was created with user_id PK
-      const retryRes = await client
-        .from('omniattend_user_sync')
-        .upsert([payload], { onConflict: 'user_id' });
-      if (retryRes.error) {
-        throw new Error('Cloud sync failed: ' + retryRes.error.message);
-      }
+      throw new Error('Cloud sync failed: ' + error.message);
     }
     return true;
   }
