@@ -47,7 +47,7 @@ class AttendanceApp {
 
   syncControlsWithSettings() {
     const settings = this.storage.getSettings();
-    
+
     // Mode buttons
     const mode = settings.trackingMode || 'hour';
     document.querySelectorAll('.mode-toggle-btn').forEach(btn => {
@@ -380,6 +380,11 @@ class AttendanceApp {
           <div class="flex items-center gap-3 justify-between md:justify-end">
             ${statusBadge}
             <div class="flex items-center gap-1">
+              <button onclick="app.openEditSlotModal('${slot.id}')"
+                      title="Edit class"
+                      class="btn-interactive p-2 bg-slate-800 hover:bg-indigo-700 text-slate-400 hover:text-white rounded-lg border border-slate-700 transition">
+                <i data-lucide="pencil" class="w-4 h-4"></i>
+              </button>
               <button onclick="app.quickMark('${slot.subjectId}', 'present', ${slot.durationHours}, '${todayDateStr}')" 
                       title="Present"
                       class="btn-interactive p-2 bg-emerald-950/40 hover:bg-emerald-600 text-emerald-400 hover:text-white rounded-lg border border-emerald-500/30 transition">
@@ -436,17 +441,22 @@ class AttendanceApp {
             ${daySlots.length === 0 ? `
               <div class="py-6 text-center text-xs text-gray-500 italic">No classes scheduled</div>
             ` : daySlots.map(slot => {
-              const sub = subjects.find(s => s.id === slot.subjectId) || { name: 'Subject', color: '#6366f1' };
-              return `
+        const sub = subjects.find(s => s.id === slot.subjectId) || { name: 'Subject', color: '#6366f1' };
+        return `
                 <div class="timetable-cell p-3 rounded-lg bg-gray-900/70 border border-gray-800/80 hover:border-indigo-500/40 relative group">
                   <div class="flex items-start justify-between">
                     <div>
                       <span class="text-[11px] font-mono text-indigo-400 font-medium">${slot.startTime} - ${slot.endTime} (${slot.durationHours}h)</span>
                       <h5 class="text-sm font-semibold text-gray-200 leading-tight mt-0.5">${sub.name}</h5>
                     </div>
-                    <button onclick="app.deleteSlot('${slot.id}')" title="Delete slot" class="text-gray-500 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition p-1">
-                      <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-                    </button>
+                    <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                      <button onclick="app.openEditSlotModal('${slot.id}')" title="Edit slot" class="text-gray-500 hover:text-indigo-400 p-1">
+                        <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                      </button>
+                      <button onclick="app.deleteSlot('${slot.id}')" title="Delete slot" class="text-gray-500 hover:text-rose-400 p-1">
+                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                      </button>
+                    </div>
                   </div>
                   <div class="flex items-center justify-between text-[11px] text-gray-400 mt-2">
                     <span class="flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3"></i> ${slot.room || 'Hall'}</span>
@@ -454,7 +464,7 @@ class AttendanceApp {
                   </div>
                 </div>
               `;
-            }).join('')}
+      }).join('')}
           </div>
         </div>
       `;
@@ -508,7 +518,7 @@ class AttendanceApp {
 
     container.innerHTML = filtered.map(rec => {
       const sub = subjects.find(s => s.id === rec.subjectId) || { name: rec.subjectName, color: '#6366f1' };
-      
+
       let badge = '';
       if (rec.status === 'present') {
         badge = `<span class="px-2.5 py-0.5 text-xs font-semibold bg-emerald-950 text-emerald-400 border border-emerald-500/30 rounded-full">Present</span>`;
@@ -551,11 +561,9 @@ class AttendanceApp {
 
     if (!canvasTrend || !canvasDist || typeof Chart === 'undefined') return;
 
-    // Destroy previous charts if existing
     if (this.attendanceChart) this.attendanceChart.destroy();
     if (this.distributionChart) this.distributionChart.destroy();
 
-    // Chart 1: Subject Attendance Comparison (Bar Chart)
     const labels = metrics.subjects.map(s => s.name.length > 18 ? s.name.substring(0, 18) + '...' : s.name);
     const percentages = metrics.subjects.map(s => s.percentage);
     const bgColors = metrics.subjects.map(s => s.percentage >= metrics.targetPercent ? 'rgba(16, 185, 129, 0.7)' : 'rgba(244, 63, 94, 0.7)');
@@ -599,7 +607,6 @@ class AttendanceApp {
       }
     });
 
-    // Chart 2: Present vs Absent vs Cancelled Units (Doughnut)
     const overall = metrics.overall;
     this.distributionChart = new Chart(canvasDist, {
       type: 'doughnut',
@@ -607,11 +614,7 @@ class AttendanceApp {
         labels: ['Attended Units', 'Absent Units', 'Cancelled Units'],
         datasets: [{
           data: [overall.attendedUnits, (metrics.mode === 'hour' ? overall.absentHours : overall.absentCount), overall.cancelledUnits],
-          backgroundColor: [
-            '#10b981', // Emerald
-            '#f43f5e', // Rose
-            '#6b7280'  // Gray
-          ],
+          backgroundColor: ['#10b981', '#f43f5e', '#6b7280'],
           borderColor: '#111827',
           borderWidth: 3
         }]
@@ -633,8 +636,7 @@ class AttendanceApp {
   // --- ACTIONS & MUTATIONS ---
   quickMark(subjectId, status, durationHours = 1.0, dateStr = null) {
     this.storage.markAttendance(subjectId, status, durationHours, dateStr);
-    
-    // Check if celebration triggered (safe milestone reached)
+
     const metrics = window.MetricsEngine.computeAllMetrics(this.storage.getUserData());
     if (metrics.overall.percentage >= metrics.targetPercent && status === 'present') {
       if (typeof confetti === 'function') {
@@ -677,7 +679,7 @@ class AttendanceApp {
     this.renderAnalytics();
   }
 
-  // --- MODALS & ROUTINE INGESTION ---
+  // --- MODALS & ROUTINE INGESTION ENGINE ---
   openRoutineModal() {
     document.getElementById('routine-modal').classList.remove('hidden');
     this.extractedRoutineCache = [];
@@ -691,15 +693,31 @@ class AttendanceApp {
     document.getElementById('routine-modal').classList.add('hidden');
   }
 
-  async handleRoutineFileUpload(file) {
-    if (!file) return;
+  async loadProvidedTimetable(e) {
+    if (e) e.stopPropagation();
+    try {
+      this.showToast('Loading timetable (IMG-20260827-WA0001.jpg)...', 'info');
+      const response = await fetch('./IMG-20260827-WA0001.jpg');
+      if (!response.ok) throw new Error('Could not load IMG-20260827-WA0001.jpg');
+      const blob = await response.blob();
+      const file = new File([blob], 'IMG-20260827-WA0001.jpg', { type: 'image/jpeg' });
+      await this.handleRoutineFileUpload([file]);
+    } catch (err) {
+      console.error(err);
+      this.showToast('Error loading timetable file: ' + err.message, 'error');
+    }
+  }
+
+  async handleRoutineFileUpload(files) {
+    if (!files || files.length === 0) return;
+    const file = files[0];
 
     const loader = document.getElementById('routine-parsing-loader');
     const uploadZone = document.getElementById('routine-upload-zone');
     const settings = this.storage.getSettings();
 
-    loader.classList.remove('hidden');
-    uploadZone.classList.add('opacity-50', 'pointer-events-none');
+    if (loader) loader.classList.remove('hidden');
+    if (uploadZone) uploadZone.classList.add('opacity-50', 'pointer-events-none');
 
     try {
       const result = await this.ingestionService.processRoutineFile(
@@ -710,13 +728,13 @@ class AttendanceApp {
 
       this.extractedRoutineCache = result.routine;
       this.renderExtractedRoutinePreview(result);
-      this.showToast(`Routine successfully parsed via ${result.source}!`, 'success');
+      this.showToast(`Routine successfully ingested via ${result.source || 'Schedule Engine'}!`, 'success');
     } catch (err) {
       console.error(err);
       this.showToast(`Parsing error: ${err.message}`, 'error');
     } finally {
-      loader.classList.add('hidden');
-      uploadZone.classList.remove('opacity-50', 'pointer-events-none');
+      if (loader) loader.classList.add('hidden');
+      if (uploadZone) uploadZone.classList.remove('opacity-50', 'pointer-events-none');
     }
   }
 
@@ -743,7 +761,7 @@ class AttendanceApp {
         <td class="py-2.5 px-3 font-semibold text-indigo-300">${slot.subjectName}</td>
         <td class="py-2.5 px-3 text-gray-400">${slot.startTime} - ${slot.endTime}</td>
         <td class="py-2.5 px-3 font-mono text-emerald-400 font-semibold">${slot.durationHours} hrs</td>
-        <td class="py-2.5 px-3 text-gray-400">${slot.room}</td>
+        <td class="py-2.5 px-3 text-gray-400">${slot.room || 'N/A'}</td>
         <td class="py-2.5 px-3 text-right">
           <button onclick="app.removeExtractedSlot(${index})" class="text-rose-400 hover:text-rose-300">
             <i data-lucide="trash" class="w-3.5 h-3.5"></i>
@@ -770,23 +788,30 @@ class AttendanceApp {
     }
 
     const userData = this.storage.getUserData();
-    const existingSubjects = userData.subjects || [];
-    const colors = ['#6366f1', '#06b6d4', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6'];
+    const colors = ['#6366f1', '#06b6d4', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6', '#f97316', '#14b8a6'];
 
-    // Auto-create subjects if they don't exist
-    const newTimetable = [];
-    this.extractedRoutineCache.forEach(slot => {
-      let sub = existingSubjects.find(s => s.name.toLowerCase() === slot.subjectName.toLowerCase());
-      if (!sub) {
-        sub = {
+    // Build fresh subjects list from the new routine (replace, don't merge)
+    const newSubjectsMap = new Map();
+    this.extractedRoutineCache.forEach((slot, idx) => {
+      const key = slot.subjectName.toLowerCase().trim();
+      if (!newSubjectsMap.has(key)) {
+        newSubjectsMap.set(key, {
           id: `sub_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
           name: slot.subjectName,
-          code: slot.subjectCode || 'CS-101',
-          color: colors[existingSubjects.length % colors.length],
+          code: slot.subjectCode || 'COURSE',
+          color: colors[newSubjectsMap.size % colors.length],
           icon: 'book'
-        };
-        existingSubjects.push(sub);
+        });
       }
+    });
+
+    const newSubjects = Array.from(newSubjectsMap.values());
+
+    const newTimetable = [];
+    this.extractedRoutineCache.forEach(slot => {
+      const key = slot.subjectName.toLowerCase().trim();
+      const sub = newSubjectsMap.get(key);
+      if (!sub) return;
 
       newTimetable.push({
         id: `tt_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
@@ -795,13 +820,18 @@ class AttendanceApp {
         startTime: slot.startTime,
         endTime: slot.endTime,
         durationHours: slot.durationHours,
-        room: slot.room,
-        instructor: slot.instructor
+        room: slot.room || 'Room 101',
+        instructor: slot.instructor || 'Faculty'
       });
     });
 
-    userData.subjects = existingSubjects;
+    // Replace subjects and timetable completely with the new routine
+    userData.subjects = newSubjects;
     userData.timetable = newTimetable;
+    // Clear old attendance records that reference old subject IDs
+    userData.attendanceRecords = (userData.attendanceRecords || []).filter(r =>
+      newSubjects.some(s => s.id === r.subjectId)
+    );
     this.storage.saveUserData(userData);
 
     this.closeRoutineModal();
@@ -811,6 +841,17 @@ class AttendanceApp {
 
   // --- MANUAL SLOT MODAL ---
   openAddSlotModal(prefilledDay = 'Monday') {
+    // Reset to Add mode
+    document.getElementById('slot-editing-id').value = '';
+    document.getElementById('slot-modal-title').textContent = 'Add Scheduled Class Slot';
+    document.getElementById('slot-save-btn').textContent = 'Save Slot';
+    document.getElementById('slot-input-start').value = '09:00';
+    document.getElementById('slot-input-end').value = '10:30';
+    document.getElementById('slot-input-room').value = '';
+    document.getElementById('slot-input-instructor').value = '';
+    document.getElementById('slot-input-subject-custom').value = '';
+    document.getElementById('slot-subject-hint').classList.add('hidden');
+
     const modal = document.getElementById('add-slot-modal');
     modal.classList.remove('hidden');
 
@@ -822,38 +863,127 @@ class AttendanceApp {
     subSelect.innerHTML = subjects.map(s => `<option value="${s.id}">${s.name} (${s.code || ''})</option>`).join('');
   }
 
+  openEditSlotModal(slotId) {
+    const userData = this.storage.getUserData();
+    const slot = (userData.timetable || []).find(t => t.id === slotId);
+    if (!slot) return;
+
+    // Switch to Edit mode
+    document.getElementById('slot-editing-id').value = slotId;
+    document.getElementById('slot-modal-title').textContent = 'Edit Class Slot';
+    document.getElementById('slot-save-btn').textContent = 'Update Slot';
+    document.getElementById('slot-input-subject-custom').value = '';
+    document.getElementById('slot-subject-hint').classList.add('hidden');
+
+    const modal = document.getElementById('add-slot-modal');
+    modal.classList.remove('hidden');
+
+    // Populate subject dropdown
+    const subSelect = document.getElementById('slot-input-subject');
+    const subjects = this.storage.getSubjects();
+    subSelect.innerHTML = subjects.map(s => `<option value="${s.id}"${s.id === slot.subjectId ? ' selected' : ''}>${s.name} (${s.code || ''})</option>`).join('');
+
+    // If subject not in list (deleted?), show its name in the custom field
+    const found = subjects.find(s => s.id === slot.subjectId);
+    if (!found) {
+      document.getElementById('slot-input-subject-custom').value = slot.subjectName || '';
+      document.getElementById('slot-subject-hint').classList.remove('hidden');
+    }
+
+    // Prefill fields
+    const daySelect = document.getElementById('slot-input-day');
+    if (daySelect) daySelect.value = slot.day || 'Monday';
+    document.getElementById('slot-input-start').value = slot.startTime || '09:00';
+    document.getElementById('slot-input-end').value = slot.endTime || '10:30';
+    document.getElementById('slot-input-room').value = slot.room || '';
+    document.getElementById('slot-input-instructor').value = slot.instructor || '';
+
+    if (window.lucide) window.lucide.createIcons();
+  }
+
   closeAddSlotModal() {
     document.getElementById('add-slot-modal').classList.add('hidden');
   }
 
   saveManualSlot() {
-    const subjectId = document.getElementById('slot-input-subject').value;
     const day = document.getElementById('slot-input-day').value;
     const startTime = document.getElementById('slot-input-start').value;
     const endTime = document.getElementById('slot-input-end').value;
     const room = document.getElementById('slot-input-room').value;
     const instructor = document.getElementById('slot-input-instructor').value;
+    const editingId = document.getElementById('slot-editing-id').value;
+    const customName = document.getElementById('slot-input-subject-custom').value.trim();
 
-    if (!subjectId || !startTime || !endTime) {
+    if (!startTime || !endTime) {
       this.showToast('Please fill out all required time fields', 'error');
       return;
     }
 
     const duration = this.ingestionService.calculateHoursDiff(startTime, endTime);
 
-    this.storage.addTimetableSlot({
-      subjectId,
-      day,
-      startTime,
-      endTime,
-      durationHours: duration,
-      room: room || 'Room 101',
-      instructor: instructor || 'Faculty'
-    });
+    // Resolve subject: custom text input takes priority over dropdown
+    let subjectId = document.getElementById('slot-input-subject').value;
+    if (customName) {
+      const userData = this.storage.getUserData();
+      const existing = (userData.subjects || []).find(s => s.name.toLowerCase() === customName.toLowerCase());
+      if (existing) {
+        subjectId = existing.id;
+      } else {
+        // Create a brand new subject
+        const colors = ['#6366f1', '#06b6d4', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6'];
+        const newSub = {
+          id: `sub_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+          name: customName,
+          code: customName.split(' ').map(w => w[0]).join('').toUpperCase().substring(0, 5) + '-NEW',
+          color: colors[(userData.subjects || []).length % colors.length],
+          icon: 'book'
+        };
+        userData.subjects = [...(userData.subjects || []), newSub];
+        this.storage.saveUserData(userData);
+        subjectId = newSub.id;
+      }
+    }
 
-    this.closeAddSlotModal();
-    this.showToast('Timetable slot added!', 'success');
-    this.renderAllViews();
+    if (!subjectId) {
+      this.showToast('Please select or type a subject name', 'error');
+      return;
+    }
+
+    if (editingId) {
+      // Update existing slot
+      const userData = this.storage.getUserData();
+      const idx = (userData.timetable || []).findIndex(t => t.id === editingId);
+      if (idx !== -1) {
+        userData.timetable[idx] = {
+          ...userData.timetable[idx],
+          subjectId,
+          day,
+          startTime,
+          endTime,
+          durationHours: duration,
+          room: room || 'Room 101',
+          instructor: instructor || 'Faculty'
+        };
+        this.storage.saveUserData(userData);
+        this.closeAddSlotModal();
+        this.showToast('Class slot updated!', 'success');
+        this.renderAllViews();
+      }
+    } else {
+      // Add new slot
+      this.storage.addTimetableSlot({
+        subjectId,
+        day,
+        startTime,
+        endTime,
+        durationHours: duration,
+        room: room || 'Room 101',
+        instructor: instructor || 'Faculty'
+      });
+      this.closeAddSlotModal();
+      this.showToast('Timetable slot added!', 'success');
+      this.renderAllViews();
+    }
   }
 
   // --- ADD SUBJECT MODAL ---
@@ -895,29 +1025,41 @@ class AttendanceApp {
     document.getElementById('settings-modal').classList.add('hidden');
   }
 
+  // =========================================================================
+  // INTEGRATIONS GATEWAY FUNCTIONS (GEMINI OCR & SUPABASE SYNC)
+  // =========================================================================
+
   saveSettingsForm() {
-    const apiKey = document.getElementById('setting-gemini-api-key').value;
-    const supaUrl = document.getElementById('setting-supabase-url').value;
-    const supaKey = document.getElementById('setting-supabase-key').value;
+    const apiKey = document.getElementById('setting-gemini-api-key').value.trim();
+    const supaUrl = document.getElementById('setting-supabase-url').value.trim();
+    const supaKey = document.getElementById('setting-supabase-key').value.trim();
 
     this.storage.updateSettings({
-      geminiApiKey: apiKey.trim(),
-      supabaseUrl: supaUrl.trim(),
-      supabaseAnonKey: supaKey.trim()
+      geminiApiKey: apiKey,
+      supabaseUrl: supaUrl,
+      supabaseAnonKey: supaKey
     });
 
     this.closeSettingsModal();
     this.showToast('Settings & Cloud config saved!', 'success');
   }
 
+     // =========================================================================
+  // INTEGRATIONS GATEWAY FUNCTIONS (GEMINI DIRECT FETCH OCR ENGINE)
+  // =========================================================================
+
+    // =========================================================================
+  // REDESIGNED INTEGRATIONS GATEWAY (CORS-BYPASS REST PROXY ENGINE)
+  // =========================================================================
+
   async testGeminiKey() {
-    const apiKey = document.getElementById('setting-gemini-api-key').value;
+    const apiKey = document.getElementById('setting-gemini-api-key').value.trim();
     const statusBox = document.getElementById('gemini-test-status');
 
-    if (!apiKey || apiKey.trim().length < 10) {
+    if (!apiKey || apiKey.length < 10) {
       if (statusBox) {
         statusBox.className = 'mt-2 text-xs p-2.5 rounded-xl border bg-rose-950/60 text-rose-300 border-rose-500/40 block';
-        statusBox.innerHTML = '<span class="font-semibold">⚠️ Please enter an API key first</span> (starts with AIzaSy... or AQ.Ab8RN...)';
+        statusBox.innerHTML = '<span class="font-semibold">⚠️ Please enter an API key first</span>';
       }
       this.showToast('Please enter an API key to test.', 'error');
       return;
@@ -925,20 +1067,23 @@ class AttendanceApp {
 
     if (statusBox) {
       statusBox.className = 'mt-2 text-xs p-2.5 rounded-xl border bg-indigo-950/60 text-indigo-300 border-indigo-500/40 block';
-      statusBox.innerHTML = '<span class="inline-block animate-spin mr-1.5">⏳</span> Connecting to Google Gemini API...';
+      statusBox.innerHTML = '<span class="inline-block animate-spin mr-1.5">⏳</span> Testing connection to Google Gemini API...';
     }
-    this.showToast('Testing connection with Google Gemini...', 'info');
+    this.showToast('Testing API key with Google Gemini...', 'info');
 
     try {
-      const result = await this.ingestionService.testApiKey(apiKey.trim());
-      const modelName = result?.model || 'Gemini 2.0 Flash';
+      const result = await this.ingestionService.testApiKey(apiKey);
+
       if (statusBox) {
         statusBox.className = 'mt-2 text-xs p-2.5 rounded-xl border bg-emerald-950/60 text-emerald-300 border-emerald-500/40 block';
-        statusBox.innerHTML = `✅ <b>Connected successfully!</b> Active Model: <span class="font-mono text-white">${modelName}</span>. Ready for routine image OCR!`;
+        statusBox.innerHTML = `✅ <b>Connected successfully!</b> Active Model: <span class="font-mono text-white">${result.model}</span> (${result.version}). Ready for routine parsing!`;
       }
       this.showToast('Gemini API key is valid & working perfectly!', 'success');
+      
+      // Auto-save setting if valid
+      this.storage.updateSettings({ geminiApiKey: apiKey });
     } catch (err) {
-      console.error(err);
+      console.error("Gemini Connection Error:", err);
       if (statusBox) {
         statusBox.className = 'mt-2 text-xs p-2.5 rounded-xl border bg-rose-950/60 text-rose-300 border-rose-500/40 block';
         statusBox.innerHTML = `❌ <b>Connection Failed:</b> ${err.message}`;
@@ -947,15 +1092,13 @@ class AttendanceApp {
     }
   }
 
+
   async pushToCloud() {
     try {
-      const supaUrl = document.getElementById('setting-supabase-url').value;
-      const supaKey = document.getElementById('setting-supabase-key').value;
+      const supaUrl = document.getElementById('setting-supabase-url').value.trim();
+      const supaKey = document.getElementById('setting-supabase-key').value.trim();
       if (supaUrl || supaKey) {
-        this.storage.updateSettings({
-          supabaseUrl: supaUrl.trim(),
-          supabaseAnonKey: supaKey.trim()
-        });
+        this.storage.updateSettings({ supabaseUrl: supaUrl, supabaseAnonKey: supaKey });
       }
 
       this.showToast('Syncing data to Supabase cloud...', 'info');
@@ -969,13 +1112,10 @@ class AttendanceApp {
 
   async pullFromCloud() {
     try {
-      const supaUrl = document.getElementById('setting-supabase-url').value;
-      const supaKey = document.getElementById('setting-supabase-key').value;
+      const supaUrl = document.getElementById('setting-supabase-url').value.trim();
+      const supaKey = document.getElementById('setting-supabase-key').value.trim();
       if (supaUrl || supaKey) {
-        this.storage.updateSettings({
-          supabaseUrl: supaUrl.trim(),
-          supabaseAnonKey: supaKey.trim()
-        });
+        this.storage.updateSettings({ supabaseUrl: supaUrl, supabaseAnonKey: supaKey });
       }
 
       this.showToast('Pulling data from Supabase cloud...', 'info');
@@ -1023,21 +1163,33 @@ class AttendanceApp {
   }
 
   // --- AUTH METHODS ---
-  handleLogin(e) {
+  async handleLogin(e) {
     e.preventDefault();
     const id = document.getElementById('login-identifier').value;
     const pass = document.getElementById('login-password').value;
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const originalText = submitBtn ? submitBtn.innerHTML : 'Sign In';
+
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span class="inline-block animate-spin mr-2">⏳</span> Verifying credentials...';
+    }
 
     try {
-      this.storage.login(id, pass);
-      this.showToast('Welcome back!', 'success');
+      await this.storage.login(id, pass);
+      this.showToast('Welcome back! Logged in successfully.', 'success');
       this.checkAuthState();
     } catch (err) {
       this.showToast(err.message, 'error');
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+      }
     }
   }
 
-  handleRegister(e) {
+  async handleRegister(e) {
     e.preventDefault();
     const name = document.getElementById('reg-name').value;
     const email = document.getElementById('reg-email').value;
@@ -1046,7 +1198,7 @@ class AttendanceApp {
     const role = document.getElementById('reg-role').value;
 
     try {
-      this.storage.register(name, email, username, password, role);
+      await this.storage.register(name, email, username, password, role);
       this.showToast('Account created successfully!', 'success');
       this.checkAuthState();
     } catch (err) {
@@ -1073,11 +1225,10 @@ class AttendanceApp {
     try {
       this.storage.resetPassword(identifier, newPass);
       this.showToast('Password updated successfully! Please sign in.', 'success');
-      
-      // Switch back to login
+
       document.getElementById('auth-forgot-box').classList.add('hidden');
       document.getElementById('auth-login-box').classList.remove('hidden');
-      
+
       const loginId = document.getElementById('login-identifier');
       if (loginId) loginId.value = identifier;
     } catch (err) {
@@ -1171,12 +1322,10 @@ class AttendanceApp {
 
   // --- EVENT BINDINGS ---
   bindEvents() {
-    // Auth form submissions
     document.getElementById('form-login')?.addEventListener('submit', (e) => this.handleLogin(e));
     document.getElementById('form-register')?.addEventListener('submit', (e) => this.handleRegister(e));
     document.getElementById('form-forgot')?.addEventListener('submit', (e) => this.handleForgotPassword(e));
-    
-    // Auth tabs (Login vs Sign Up vs Forgot)
+
     document.getElementById('btn-show-signup')?.addEventListener('click', () => {
       document.getElementById('auth-login-box').classList.add('hidden');
       document.getElementById('auth-forgot-box').classList.add('hidden');
@@ -1198,27 +1347,23 @@ class AttendanceApp {
       document.getElementById('auth-login-box').classList.remove('hidden');
     });
 
-    // Tracking mode buttons
     document.querySelectorAll('.mode-toggle-btn').forEach(btn => {
       btn.addEventListener('click', () => this.setTrackingMode(btn.dataset.mode));
     });
 
-    // Target slider
     const slider = document.getElementById('target-attendance-slider');
     slider?.addEventListener('input', (e) => this.setTargetAttendance(e.target.value));
 
-    // Nav tabs
     document.querySelectorAll('.nav-tab').forEach(tab => {
       tab.addEventListener('click', () => this.switchTab(tab.dataset.tab));
     });
 
-    // Routine Dropzone
     const dropzone = document.getElementById('routine-upload-zone');
     const fileInput = document.getElementById('routine-file-input');
 
     if (dropzone && fileInput) {
       dropzone.addEventListener('click', () => fileInput.click());
-      
+
       ['dragenter', 'dragover'].forEach(eventName => {
         dropzone.addEventListener(eventName, (e) => {
           e.preventDefault();
@@ -1235,15 +1380,14 @@ class AttendanceApp {
 
       dropzone.addEventListener('drop', (e) => {
         const files = e.dataTransfer.files;
-        if (files.length > 0) this.handleRoutineFileUpload(files[0]);
+        if (files.length > 0) this.handleRoutineFileUpload(files);
       });
 
       fileInput.addEventListener('change', (e) => {
-        if (e.target.files.length > 0) this.handleRoutineFileUpload(e.target.files[0]);
+        if (e.target.files.length > 0) this.handleRoutineFileUpload(e.target.files);
       });
     }
 
-    // Filter changes in history log
     document.getElementById('history-filter-subject')?.addEventListener('change', () => this.renderHistoryLog());
     document.getElementById('history-filter-status')?.addEventListener('change', () => this.renderHistoryLog());
   }

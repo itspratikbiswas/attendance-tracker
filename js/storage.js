@@ -9,6 +9,11 @@ const STORAGE_KEYS = {
   GLOBAL_CONFIG: 'attend_tracker_config_v2'
 };
 
+const DEFAULT_SUPABASE_CONFIG = {
+  url: 'https://unnivvoxhgtijjxwgeue.supabase.co',
+  anonKey: 'sb_publishable_Fr2_aI_2cBK53lOem-fayA_DMZzpBoj'
+};
+
 class StorageService {
   constructor() {
     this.currentUser = null;
@@ -163,9 +168,31 @@ class StorageService {
     return `attend_tracker_user_${userId}_data`;
   }
 
+  async hashPassword(password) {
+    if (!password) return '';
+    try {
+      if (window.crypto && window.crypto.subtle) {
+        const msgBuffer = new TextEncoder().encode(password);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      }
+    } catch (e) {
+      console.warn('Subtle crypto error, using fallback hash:', e);
+    }
+    // Fallback simple hash for non-secure HTTP contexts
+    let hash = 0;
+    for (let i = 0; i < password.length; i++) {
+      const char = password.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash |= 0;
+    }
+    return 'sha256_' + Math.abs(hash).toString(16);
+  }
+
   // --- Auth Methods ---
 
-  register(name, email, username, password, role = 'Student') {
+  async register(name, email, username, password, role = 'Student') {
     const users = this.getUsers();
     
     // Check if email or username taken
@@ -173,6 +200,8 @@ class StorageService {
     if (existing) {
       throw new Error('An account with this email or username already exists.');
     }
+
+    const passwordHash = await this.hashPassword(password);
 
     const newUser = {
       id: `usr_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
@@ -214,19 +243,110 @@ class StorageService {
 
     localStorage.setItem(this.getUserStorageKey(newUser.id), JSON.stringify(blankData));
     
+    // Auto sync new account to Supabase Cloud with encrypted/hashed password
+    const client = this.getSupabaseClient();
+    if (client) {
+      const fullData = {
+        ...blankData,
+        account: {
+          id: newUser.id,
+          name: newUser.name,
+          email: newUser.email,
+          username: newUser.username,
+          password: passwordHash,
+          role: newUser.role,
+          avatar: newUser.avatar
+        }
+      };
+      client.from('omniattend_user_sync').upsert([{
+        user_id: newUser.id,
+        user_email: newUser.email,
+        user_name: newUser.name,
+        user_data: fullData,
+        updated_at: new Date().toISOString()
+      }], { onConflict: 'user_id' }).then(() => {}).catch(err => console.warn('Cloud register sync error:', err));
+    }
+
     // Auto login
     this.setSession(newUser);
     return newUser;
   }
 
-  login(identifier, password) {
+  async login(identifier, password) {
     const users = this.getUsers();
     const idClean = identifier.trim().toLowerCase();
     
-    const user = users.find(u => 
+    // 1. Check local device storage
+    let user = users.find(u => 
       (u.email.toLowerCase() === idClean || u.username.toLowerCase() === idClean) && 
       u.password === password
     );
+
+    // 2. If not found locally on this device, check Supabase Cloud
+    if (!user) {
+      const client = this.getSupabaseClient();
+      if (client) {
+        try {
+          // Query Supabase by email first
+          let { data, error } = await client
+            .from('omniattend_user_sync')
+            .select('*')
+            .eq('user_email', idClean)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          // If not found by email, scan all cloud accounts by username/email inside user_data
+          if (!data) {
+            const allRes = await client
+              .from('omniattend_user_sync')
+              .select('*');
+            if (allRes.data && allRes.data.length > 0) {
+              data = allRes.data.find(row => {
+                const acc = row.user_data?.account || {};
+                return (acc.username || '').toLowerCase() === idClean ||
+                       (acc.email || '').toLowerCase() === idClean ||
+                       (row.user_email || '').toLowerCase() === idClean ||
+                       (row.user_name || '').toLowerCase() === idClean;
+              });
+            }
+          }
+
+          if (data && data.user_data) {
+            const acc = data.user_data.account || {};
+            const cloudPassword = acc.password || data.password;
+            const inputHash = await this.hashPassword(password);
+
+            // Check against SHA-256 hash or legacy plain password
+            if (cloudPassword && (cloudPassword === inputHash || cloudPassword === password)) {
+              // Reconstruct user account locally on this new device
+              user = {
+                id: data.user_id,
+                name: acc.name || data.user_name || 'Student',
+                email: acc.email || data.user_email || idClean,
+                username: acc.username || idClean,
+                password: password,
+                role: acc.role || 'Student',
+                avatar: acc.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${idClean}`,
+                createdAt: data.updated_at
+              };
+
+              // Save user to device local storage
+              users.push(user);
+              localStorage.setItem(STORAGE_KEYS.USERS_LIST, JSON.stringify(users));
+
+              // Auto-restore timetable and attendance records
+              this.saveUserData(data.user_data, user.id);
+            } else if (cloudPassword && cloudPassword !== password && cloudPassword !== inputHash) {
+              throw new Error('Incorrect password.');
+            }
+          }
+        } catch (cloudErr) {
+          if (cloudErr.message === 'Incorrect password.') throw cloudErr;
+          console.warn('Cloud login lookup error:', cloudErr);
+        }
+      }
+    }
 
     if (!user) {
       throw new Error('Invalid email/username or password.');
@@ -291,9 +411,10 @@ class StorageService {
     }
   }
 
-  saveUserData(data) {
-    if (!this.currentUser) return false;
-    const key = this.getUserStorageKey(this.currentUser.id);
+  saveUserData(data, specificUserId = null) {
+    const uid = specificUserId || (this.currentUser ? this.currentUser.id : null);
+    if (!uid) return false;
+    const key = this.getUserStorageKey(uid);
     localStorage.setItem(key, JSON.stringify(data));
     return true;
   }
@@ -454,12 +575,15 @@ class StorageService {
   // --- SUPABASE CLOUD BACKEND INTEGRATION ---
   getSupabaseClient() {
     const settings = this.getSettings();
-    if (!settings.supabaseUrl || !settings.supabaseAnonKey) {
+    const url = settings?.supabaseUrl || DEFAULT_SUPABASE_CONFIG.url;
+    const key = settings?.supabaseAnonKey || DEFAULT_SUPABASE_CONFIG.anonKey;
+
+    if (!url || !key) {
       return null;
     }
     if (window.supabase && typeof window.supabase.createClient === 'function') {
       try {
-        return window.supabase.createClient(settings.supabaseUrl, settings.supabaseAnonKey);
+        return window.supabase.createClient(url, key);
       } catch (e) {
         console.error('Supabase initialization failed:', e);
         return null;
@@ -475,15 +599,32 @@ class StorageService {
     }
 
     const userData = this.getUserData();
+    const userEmail = (this.currentUser.email || '').toLowerCase().trim();
+    const users = this.getUsers();
+    const account = users.find(u => u.id === this.currentUser.id) || {};
+
+    const passwordHash = await this.hashPassword(account.password || '');
+
     const payload = {
       user_id: this.currentUser.id,
-      user_email: this.currentUser.email,
+      user_email: userEmail,
       user_name: this.currentUser.name,
-      user_data: userData,
+      user_data: {
+        ...userData,
+        account: {
+          id: this.currentUser.id,
+          name: this.currentUser.name,
+          email: userEmail,
+          username: (account.username || this.currentUser.username || '').toLowerCase().trim(),
+          password: passwordHash,
+          role: account.role || 'Student',
+          avatar: account.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${userEmail}`
+        }
+      },
       updated_at: new Date().toISOString()
     };
 
-    // Upsert into omniattend_cloud_store
+    // Upsert into omniattend_user_sync
     const { data, error } = await client
       .from('omniattend_user_sync')
       .upsert([payload], { onConflict: 'user_id' });
@@ -500,21 +641,33 @@ class StorageService {
       throw new Error('Supabase URL and Anon Key must be configured in Settings.');
     }
 
-    const { data, error } = await client
+    const userEmail = (this.currentUser.email || '').toLowerCase().trim();
+    
+    // 1. Try pulling by user_email first (cross-device universal match)
+    let { data, error } = await client
       .from('omniattend_user_sync')
       .select('*')
-      .eq('user_id', this.currentUser.id)
-      .single();
+      .eq('user_email', userEmail)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-    if (error) {
-      throw new Error('Cloud pull failed: ' + error.message);
+    // 2. Fallback to user_id match
+    if (!data) {
+      const idRes = await client
+        .from('omniattend_user_sync')
+        .select('*')
+        .eq('user_id', this.currentUser.id)
+        .maybeSingle();
+      data = idRes.data;
     }
 
-    if (data && data.user_data) {
-      this.saveUserData(data.user_data);
-      return data.user_data;
+    if (!data || !data.user_data) {
+      throw new Error('No cloud backup found for this account. Make sure you clicked "Push to Cloud" on your first device.');
     }
-    return null;
+
+    this.saveUserData(data.user_data);
+    return data.user_data;
   }
 }
 
