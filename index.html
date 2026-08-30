@@ -469,15 +469,46 @@
 
       <!-- ================= TAB 2: TODAY'S CLASSES ================= -->
       <div id="tab-panel-today" class="tab-content-panel hidden space-y-4">
-        <div class="flex items-center justify-between pb-2">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2">
           <div>
-            <h3 class="text-lg font-bold text-white">Today's Class Schedule</h3>
+            <h3 class="text-lg font-bold text-white">Class Schedule</h3>
             <p id="today-day-name" class="text-xs text-indigo-400 font-medium font-mono">Monday, Oct 12, 2026</p>
           </div>
-          <button onclick="app.openRoutineModal()"
-            class="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1">
-            <i data-lucide="upload" class="w-3.5 h-3.5"></i> Re-import Routine
-          </button>
+
+          <!-- Date Navigation Controls -->
+          <div class="flex items-center gap-2 flex-wrap">
+            <!-- Prev Day -->
+            <button onclick="app.navigateDate(-1)" title="Previous Day"
+              class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition btn-interactive">
+              <i data-lucide="chevron-left" class="w-4 h-4"></i>
+            </button>
+
+            <!-- Date Picker -->
+            <div class="relative">
+              <input id="schedule-date-picker" type="date"
+                onchange="app.jumpToDate(this.value)"
+                class="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/40 cursor-pointer transition"
+                style="color-scheme: dark;" />
+            </div>
+
+            <!-- Next Day -->
+            <button onclick="app.navigateDate(1)" title="Next Day"
+              class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition btn-interactive">
+              <i data-lucide="chevron-right" class="w-4 h-4"></i>
+            </button>
+
+            <!-- Go to Today -->
+            <button id="btn-go-today" onclick="app.jumpToDate(new Date().toISOString().split('T')[0])" title="Go to Today"
+              style="display:none;"
+              class="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold border border-indigo-500/40 transition btn-interactive flex items-center gap-1.5">
+              <i data-lucide="calendar-check" class="w-3.5 h-3.5"></i> Today
+            </button>
+
+            <button onclick="app.openRoutineModal()"
+              class="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 ml-1">
+              <i data-lucide="upload" class="w-3.5 h-3.5"></i> Re-import
+            </button>
+          </div>
         </div>
 
         <div id="today-classes-list" class="space-y-3">

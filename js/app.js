@@ -15,6 +15,7 @@ class AttendanceApp {
     this.attendanceChart = null;
     this.distributionChart = null;
     this.extractedRoutineCache = [];
+    this.selectedDate = new Date(); // date currently viewed in Today's Schedule
 
     this.init();
   }
@@ -292,17 +293,17 @@ class AttendanceApp {
           <div class="mt-4 pt-3 border-t border-gray-800 flex items-center justify-between gap-2">
             <span class="text-xs text-gray-400">Quick Log:</span>
             <div class="flex items-center gap-1.5">
-              <button onclick="app.quickMark('${sub.id}', 'present', ${isHour ? 1.5 : 1})" 
-                      title="Mark Present (+${isHour ? '1.5h' : '1 class'})"
+              <button onclick="app.quickMark('${sub.id}', 'present', ${isHour ? 1 : 1})" 
+                      title="Mark Present (+${isHour ? '1h' : '1 class'})"
                       class="btn-interactive px-2.5 py-1 bg-emerald-950/60 hover:bg-emerald-800 text-emerald-300 border border-emerald-500/40 rounded-lg text-xs font-semibold flex items-center gap-1">
                 <i data-lucide="check" class="w-3.5 h-3.5"></i> Present
               </button>
-              <button onclick="app.quickMark('${sub.id}', 'absent', ${isHour ? 1.5 : 1})" 
-                      title="Mark Absent (-${isHour ? '1.5h' : '1 class'})"
+              <button onclick="app.quickMark('${sub.id}', 'absent', ${isHour ? 1 : 1})" 
+                      title="Mark Absent (-${isHour ? '1h' : '1 class'})"
                       class="btn-interactive px-2.5 py-1 bg-rose-950/60 hover:bg-rose-800 text-rose-300 border border-rose-500/40 rounded-lg text-xs font-semibold flex items-center gap-1">
                 <i data-lucide="x" class="w-3.5 h-3.5"></i> Absent
               </button>
-              <button onclick="app.quickMark('${sub.id}', 'cancelled', ${isHour ? 1.5 : 1})" 
+              <button onclick="app.quickMark('${sub.id}', 'cancelled', ${isHour ? 1 : 1})" 
                       title="Mark Class Cancelled / Holiday"
                       class="btn-interactive px-2 py-1 bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 rounded-lg text-xs font-medium">
                 Cancel
@@ -317,6 +318,21 @@ class AttendanceApp {
   }
 
   // --- TODAY'S SCHEDULE & QUICK CHECK-IN ---
+  navigateDate(delta) {
+    const d = new Date(this.selectedDate);
+    d.setDate(d.getDate() + delta);
+    this.selectedDate = d;
+    this.renderTodaySchedule();
+  }
+
+  jumpToDate(dateStr) {
+    if (!dateStr) return;
+    const d = new Date(dateStr + 'T00:00:00');
+    if (isNaN(d.getTime())) return;
+    this.selectedDate = d;
+    this.renderTodaySchedule();
+  }
+
   renderTodaySchedule() {
     const container = document.getElementById('today-classes-list');
     if (!container) return;
@@ -325,15 +341,26 @@ class AttendanceApp {
     if (!userData) return;
 
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const todayName = days[new Date().getDay()];
-    const todayDateStr = new Date().toISOString().split('T')[0];
+    const viewDate = this.selectedDate || new Date();
+    const todayName = days[viewDate.getDay()];
+    const todayDateStr = viewDate.toISOString().split('T')[0];
+    const isToday = todayDateStr === new Date().toISOString().split('T')[0];
 
     const timetable = userData.timetable || [];
     const todaySlots = timetable.filter(t => t.day.toLowerCase() === todayName.toLowerCase());
 
     const recordsToday = (userData.attendanceRecords || []).filter(r => r.date === todayDateStr);
 
-    document.getElementById('today-day-name').textContent = `${todayName}, ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+    const dayLabel = isToday ? 'Today' : todayName;
+    document.getElementById('today-day-name').textContent = `${dayLabel}, ${viewDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+
+    // Update date picker input value
+    const datePicker = document.getElementById('schedule-date-picker');
+    if (datePicker) datePicker.value = todayDateStr;
+
+    // Update today button visibility
+    const goTodayBtn = document.getElementById('btn-go-today');
+    if (goTodayBtn) goTodayBtn.style.display = isToday ? 'none' : 'flex';
 
     if (todaySlots.length === 0) {
       container.innerHTML = `
