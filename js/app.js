@@ -318,6 +318,14 @@ class AttendanceApp {
   }
 
   // --- TODAY'S SCHEDULE & QUICK CHECK-IN ---
+  formatLocalDate(date) {
+    const d = date ? new Date(date) : new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
   navigateDate(delta) {
     const d = new Date(this.selectedDate);
     d.setDate(d.getDate() + delta);
@@ -343,8 +351,8 @@ class AttendanceApp {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const viewDate = this.selectedDate || new Date();
     const todayName = days[viewDate.getDay()];
-    const todayDateStr = viewDate.toISOString().split('T')[0];
-    const isToday = todayDateStr === new Date().toISOString().split('T')[0];
+    const todayDateStr = this.formatLocalDate(viewDate);
+    const isToday = todayDateStr === this.formatLocalDate(new Date());
 
     const timetable = userData.timetable || [];
     const todaySlots = timetable.filter(t => t.day.toLowerCase() === todayName.toLowerCase());
