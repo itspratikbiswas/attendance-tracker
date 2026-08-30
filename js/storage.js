@@ -514,7 +514,14 @@ class StorageService {
     const sub = subjects.find(s => s.id === subjectId);
     const subName = sub ? sub.name : 'Unknown Subject';
 
-    const targetDate = dateStr || new Date().toISOString().split('T')[0];
+    let targetDate = dateStr;
+    if (!targetDate) {
+      const d = new Date();
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      targetDate = `${year}-${month}-${day}`;
+    }
 
     const newRecord = {
       id: `att_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
