@@ -10,8 +10,8 @@ const STORAGE_KEYS = {
 };
 
 const DEFAULT_SUPABASE_CONFIG = {
-  url: 'https://unnivvoxhgtijjxwgeue.supabase.co',
-  anonKey: 'sb_publishable_Fr2_aI_2cBK53lOem-fayA_DMZzpBoj'
+  url: '',
+  anonKey: ''
 };
 
 class StorageService {
@@ -580,29 +580,111 @@ class StorageService {
   }
 
   // --- SUPABASE CLOUD BACKEND INTEGRATION ---
-  getSupabaseClient() {
+  formatSupabaseUrl(rawUrl) {
+    if (!rawUrl) return '';
+    let clean = rawUrl.trim();
+    if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
+      clean = 'https://' + clean;
+    }
+    return clean.replace(/\/+$/, '');
+  }
+
+  getSupabaseClient(overrideUrl = null, overrideKey = null) {
     const settings = this.getSettings();
-    const url = settings?.supabaseUrl || DEFAULT_SUPABASE_CONFIG.url;
-    const key = settings?.supabaseAnonKey || DEFAULT_SUPABASE_CONFIG.anonKey;
+    let url = this.formatSupabaseUrl(overrideUrl || settings?.supabaseUrl || DEFAULT_SUPABASE_CONFIG.url);
+    let key = (overrideKey || settings?.supabaseAnonKey || DEFAULT_SUPABASE_CONFIG.anonKey || '').trim();
 
     if (!url || !key) {
       return null;
     }
+
     if (window.supabase && typeof window.supabase.createClient === 'function') {
       try {
-        return window.supabase.createClient(url, key);
+        return window.supabase.createClient(url, key, {
+          auth: {
+            persistSession: false,
+            autoRefreshToken: false
+          }
+        });
       } catch (e) {
-        console.error('Supabase initialization failed:', e);
+        console.error('Supabase client initialization failed:', e);
         return null;
       }
     }
     return null;
   }
 
+  /**
+   * Tests Supabase connectivity and checks if the omniattend_user_sync table exists.
+   */
+  async testSupabaseConnection(urlInput, keyInput) {
+    const url = this.formatSupabaseUrl(urlInput);
+    const key = (keyInput || '').trim();
+
+    if (!url) {
+      throw new Error('Please provide your Supabase Project URL (e.g. https://xyzcompany.supabase.co).');
+    }
+    if (!url.includes('.supabase.co') && !url.includes('localhost') && !url.includes('127.0.0.1')) {
+      throw new Error('Supabase URL format looks invalid. Expected format: https://<project-ref>.supabase.co');
+    }
+    if (!key || key.length < 20) {
+      throw new Error('Please provide a valid Supabase anon/public key.');
+    }
+
+    const client = this.getSupabaseClient(url, key);
+    if (!client) {
+      throw new Error('Supabase JS library is not loaded. Please verify your internet connection.');
+    }
+
+    try {
+      // Test querying the table
+      const { data, error } = await client
+        .from('omniattend_user_sync')
+        .select('user_id')
+        .limit(1);
+
+      if (error) {
+        // Check if table missing
+        if (error.code === '42P01' || error.message?.includes('does not exist') || error.code === 'PGRST204' || error.code === 'PGRST200') {
+          return {
+            success: false,
+            tableMissing: true,
+            message: `Connected to Supabase successfully, but table 'omniattend_user_sync' was not found in your database. Please run the SQL setup script below.`
+          };
+        }
+        if (error.code === 'PGRST301' || error.message?.includes('JWT') || error.message?.includes('apikey')) {
+          throw new Error(`Invalid Anon Key: ${error.message}`);
+        }
+        throw new Error(error.message || 'Error querying Supabase table.');
+      }
+
+      return {
+        success: true,
+        message: 'Successfully connected to Supabase and verified omniattend_user_sync table!'
+      };
+    } catch (err) {
+      if (err.message && (err.message.includes('Failed to fetch') || err.message.includes('NetworkError') || err.message.includes('Load failed'))) {
+        throw new Error('Network error (Failed to fetch). Possible causes: 1) The Supabase Project URL is incorrect or paused, 2) CORS blocked, or 3) No internet connection.');
+      }
+      throw err;
+    }
+  }
+
   async syncToSupabaseCloud() {
+    const settings = this.getSettings();
+    const url = this.formatSupabaseUrl(settings?.supabaseUrl);
+    const key = (settings?.supabaseAnonKey || '').trim();
+
+    if (!url || !key) {
+      throw new Error('Supabase Project URL and Anon Key are not configured. Please enter them in Settings.');
+    }
+
     const client = this.getSupabaseClient();
-    if (!client || !this.currentUser) {
-      throw new Error('Supabase URL and Anon Key must be configured in Settings.');
+    if (!client) {
+      throw new Error('Could not initialize Supabase client. Please check your Supabase credentials in Settings.');
+    }
+    if (!this.currentUser) {
+      throw new Error('No active user logged in.');
     }
 
     const userData = this.getUserData();
@@ -631,50 +713,78 @@ class StorageService {
       updated_at: new Date().toISOString()
     };
 
-    // Upsert into omniattend_user_sync
-    const { data, error } = await client
-      .from('omniattend_user_sync')
-      .upsert([payload], { onConflict: 'user_id' });
+    try {
+      // Upsert into omniattend_user_sync
+      const { data, error } = await client
+        .from('omniattend_user_sync')
+        .upsert([payload], { onConflict: 'user_id' });
 
-    if (error) {
-      throw new Error('Cloud sync failed: ' + error.message);
+      if (error) {
+        if (error.code === '42P01' || error.message?.includes('does not exist') || error.code === 'PGRST204') {
+          throw new Error('Table "omniattend_user_sync" does not exist in your Supabase database. Please create it using the SQL snippet in Settings.');
+        }
+        throw new Error('Cloud sync failed: ' + error.message);
+      }
+      return true;
+    } catch (err) {
+      if (err.message && (err.message.includes('Failed to fetch') || err.message.includes('NetworkError') || err.message.includes('Load failed'))) {
+        throw new Error('Failed to fetch: Unable to reach your Supabase endpoint. Please verify your Project URL and Anon Key in Settings.');
+      }
+      throw err;
     }
-    return true;
   }
 
   async syncFromSupabaseCloud() {
+    const settings = this.getSettings();
+    const url = this.formatSupabaseUrl(settings?.supabaseUrl);
+    const key = (settings?.supabaseAnonKey || '').trim();
+
+    if (!url || !key) {
+      throw new Error('Supabase Project URL and Anon Key are not configured. Please enter them in Settings.');
+    }
+
     const client = this.getSupabaseClient();
-    if (!client || !this.currentUser) {
-      throw new Error('Supabase URL and Anon Key must be configured in Settings.');
+    if (!client) {
+      throw new Error('Could not initialize Supabase client. Please check your Supabase credentials in Settings.');
+    }
+    if (!this.currentUser) {
+      throw new Error('No active user logged in.');
     }
 
     const userEmail = (this.currentUser.email || '').toLowerCase().trim();
     
-    // 1. Try pulling by user_email first (cross-device universal match)
-    let { data, error } = await client
-      .from('omniattend_user_sync')
-      .select('*')
-      .eq('user_email', userEmail)
-      .order('updated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    // 2. Fallback to user_id match
-    if (!data) {
-      const idRes = await client
+    try {
+      // 1. Try pulling by user_email first (cross-device universal match)
+      let { data, error } = await client
         .from('omniattend_user_sync')
         .select('*')
-        .eq('user_id', this.currentUser.id)
+        .eq('user_email', userEmail)
+        .order('updated_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
-      data = idRes.data;
-    }
 
-    if (!data || !data.user_data) {
-      throw new Error('No cloud backup found for this account. Make sure you clicked "Push to Cloud" on your first device.');
-    }
+      // 2. Fallback to user_id match
+      if (!data) {
+        const idRes = await client
+          .from('omniattend_user_sync')
+          .select('*')
+          .eq('user_id', this.currentUser.id)
+          .maybeSingle();
+        data = idRes.data;
+      }
 
-    this.saveUserData(data.user_data);
-    return data.user_data;
+      if (!data || !data.user_data) {
+        throw new Error('No cloud backup found for this account. Make sure you clicked "Push to Cloud" on your first device.');
+      }
+
+      this.saveUserData(data.user_data);
+      return data.user_data;
+    } catch (err) {
+      if (err.message && (err.message.includes('Failed to fetch') || err.message.includes('NetworkError') || err.message.includes('Load failed'))) {
+        throw new Error('Failed to fetch: Unable to reach your Supabase endpoint. Please verify your Project URL and Anon Key in Settings.');
+      }
+      throw err;
+    }
   }
 }
 

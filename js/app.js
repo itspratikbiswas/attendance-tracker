@@ -1054,6 +1054,7 @@ class AttendanceApp {
     modal.classList.remove('hidden');
     this.syncControlsWithSettings();
     this.renderSettingsSubjectsList();
+    if (window.lucide) lucide.createIcons();
   }
 
   closeSettingsModal() {
@@ -1127,6 +1128,85 @@ class AttendanceApp {
     }
   }
 
+
+  async testSupabaseConnection() {
+    const supaUrl = document.getElementById('setting-supabase-url').value.trim();
+    const supaKey = document.getElementById('setting-supabase-key').value.trim();
+    const statusBox = document.getElementById('supabase-test-status');
+
+    if (!supaUrl || !supaKey) {
+      if (statusBox) {
+        statusBox.className = 'mt-2 text-xs p-2.5 rounded-xl border bg-rose-950/60 text-rose-300 border-rose-500/40 block';
+        statusBox.innerHTML = '<span class="font-semibold">⚠️ Please enter both Supabase Project URL and Anon Public Key</span>';
+      }
+      this.showToast('Please enter both Supabase URL and Anon Key.', 'error');
+      return;
+    }
+
+    if (statusBox) {
+      statusBox.className = 'mt-2 text-xs p-2.5 rounded-xl border bg-indigo-950/60 text-indigo-300 border-indigo-500/40 block';
+      statusBox.innerHTML = '<span class="inline-block animate-spin mr-1.5">⏳</span> Connecting to Supabase project...';
+    }
+    this.showToast('Testing connection to Supabase...', 'info');
+
+    try {
+      const res = await this.storage.testSupabaseConnection(supaUrl, supaKey);
+
+      if (res.tableMissing) {
+        if (statusBox) {
+          statusBox.className = 'mt-2 text-xs p-2.5 rounded-xl border bg-amber-950/60 text-amber-300 border-amber-500/40 block';
+          statusBox.innerHTML = `⚠️ <b>Connected to Supabase</b>, but table <code class="bg-amber-900/60 px-1 py-0.5 rounded text-amber-100 font-mono">omniattend_user_sync</code> does not exist yet. Please run the SQL setup script below.`;
+        }
+        this.showToast('Connected, but database table is missing.', 'info');
+      } else {
+        if (statusBox) {
+          statusBox.className = 'mt-2 text-xs p-2.5 rounded-xl border bg-emerald-950/60 text-emerald-300 border-emerald-500/40 block';
+          statusBox.innerHTML = `✅ <b>Supabase Cloud Connected!</b> Table <code class="bg-emerald-900/60 px-1 py-0.5 rounded text-white font-mono">omniattend_user_sync</code> is ready for sync.`;
+        }
+        this.showToast('Supabase connection verified successfully!', 'success');
+      }
+
+      // Auto-save settings
+      this.storage.updateSettings({ supabaseUrl: supaUrl, supabaseAnonKey: supaKey });
+    } catch (err) {
+      console.error("Supabase Connection Error:", err);
+      if (statusBox) {
+        statusBox.className = 'mt-2 text-xs p-2.5 rounded-xl border bg-rose-950/60 text-rose-300 border-rose-500/40 block';
+        statusBox.innerHTML = `❌ <b>Connection Failed:</b> ${err.message}`;
+      }
+      this.showToast('Supabase Error: ' + err.message, 'error');
+    }
+  }
+
+  copySupabaseSQL() {
+    const sql = `-- Run this in your Supabase Dashboard > SQL Editor:
+create table if not exists omniattend_user_sync (
+  user_id text primary key,
+  user_email text,
+  user_name text,
+  user_data jsonb not null,
+  updated_at timestamp with time zone default now()
+);
+
+-- Enable Row Level Security
+alter table omniattend_user_sync enable row level security;
+
+-- Create policy for public access with anon key
+create policy "Allow all access" on omniattend_user_sync
+  for all
+  using (true)
+  with check (true);`;
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(sql).then(() => {
+        this.showToast('Supabase SQL copied to clipboard!', 'success');
+      }).catch(() => {
+        this.showToast('Copied SQL code!', 'info');
+      });
+    } else {
+      this.showToast('SQL snippet ready to copy from settings.', 'info');
+    }
+  }
 
   async pushToCloud() {
     try {
