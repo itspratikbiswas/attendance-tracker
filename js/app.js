@@ -23,12 +23,23 @@ class AttendanceApp {
   init() {
     this.bindEvents();
     this.bindSyncStatusEvents();
+    this.bindCrossDeviceFocusEvents();
     this.checkAuthState();
   }
 
   bindSyncStatusEvents() {
     window.addEventListener('omniattend:sync-status', (e) => {
       this.handleSyncStatus(e.detail);
+    });
+  }
+
+  bindCrossDeviceFocusEvents() {
+    // When returning to the app on Device 2, automatically check for cloud updates
+    window.addEventListener('focus', () => this.checkAndAutoPullCloudData());
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        this.checkAndAutoPullCloudData();
+      }
     });
   }
 
@@ -50,6 +61,25 @@ class AttendanceApp {
       this.renderUserProfile();
       this.syncControlsWithSettings();
       this.renderAllViews();
+      this.storage.initRealtimeCloudSubscription();
+      this.checkAndAutoPullCloudData();
+    }
+  }
+
+  async checkAndAutoPullCloudData() {
+    const user = this.storage.getCurrentUser();
+    if (!user) return;
+    const settings = this.storage.getSettings();
+    if (!settings?.supabaseUrl || !settings?.supabaseAnonKey) return;
+
+    try {
+      const cloudData = await this.storage.syncFromSupabaseCloud();
+      if (cloudData) {
+        this.renderAllViews();
+      }
+    } catch (e) {
+      // Silent catch on auto-pull so offline mode doesn't show intrusive error toasts
+      console.log('Background cloud check:', e.message);
     }
   }
 

@@ -838,13 +838,57 @@ class StorageService {
         throw new Error('No cloud backup found for this account. Make sure you clicked "Push to Cloud" on your first device.');
       }
 
-      this.saveUserData(data.user_data);
+      // Save to local device without triggering an automatic upward loop
+      this.saveUserData(data.user_data, null, true);
+      this.initRealtimeCloudSubscription();
       return data.user_data;
     } catch (err) {
       if (err.message && (err.message.includes('Failed to fetch') || err.message.includes('NetworkError') || err.message.includes('Load failed'))) {
         throw new Error('Failed to fetch: Unable to reach your Supabase endpoint. Please verify your Project URL and Anon Key in Settings.');
       }
       throw err;
+    }
+  }
+
+  // --- Realtime Supabase Cross-Device Live Push Sync ---
+  initRealtimeCloudSubscription() {
+    const client = this.getSupabaseClient();
+    if (!client || !this.currentUser) return;
+
+    if (this.realtimeChannel) {
+      try {
+        client.removeChannel(this.realtimeChannel);
+      } catch (e) {}
+      this.realtimeChannel = null;
+    }
+
+    try {
+      const userEmail = (this.currentUser.email || '').toLowerCase().trim();
+      const currentUserId = this.currentUser.id;
+
+      this.realtimeChannel = client
+        .channel(`omniattend-realtime-${currentUserId}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'omniattend_user_sync' },
+          (payload) => {
+            const newRow = payload.new;
+            if (newRow && (newRow.user_id === currentUserId || (newRow.user_email && newRow.user_email.toLowerCase() === userEmail))) {
+              if (newRow.user_data) {
+                // Apply update locally without re-pushing
+                this.saveUserData(newRow.user_data, currentUserId, true);
+                this.lastSyncTime = new Date();
+                this.dispatchSyncEvent('synced', `Live update from another device at ${this.lastSyncTime.toLocaleTimeString()}`);
+                if (window.app && typeof window.app.renderAllViews === 'function') {
+                  window.app.renderAllViews();
+                }
+              }
+            }
+          }
+        )
+        .subscribe();
+    } catch (err) {
+      console.warn('Realtime channel subscription error:', err);
     }
   }
 }
