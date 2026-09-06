@@ -17,6 +17,10 @@ const DEFAULT_SUPABASE_CONFIG = {
 class StorageService {
   constructor() {
     this.currentUser = null;
+    this.autoSyncTimer = null;
+    this.isSyncing = false;
+    this.lastSyncTime = null;
+    this.lastSyncStatus = 'idle'; // 'idle' | 'syncing' | 'synced' | 'error' | 'offline'
     this.init();
   }
 
@@ -411,12 +415,69 @@ class StorageService {
     }
   }
 
-  saveUserData(data, specificUserId = null) {
+  saveUserData(data, specificUserId = null, skipAutoSync = false) {
     const uid = specificUserId || (this.currentUser ? this.currentUser.id : null);
     if (!uid) return false;
     const key = this.getUserStorageKey(uid);
     localStorage.setItem(key, JSON.stringify(data));
+
+    if (!skipAutoSync) {
+      this.triggerDebouncedAutoSync();
+    }
     return true;
+  }
+
+  // Auto-Cloud Sync Engine
+  triggerDebouncedAutoSync(delayMs = 1200) {
+    const settings = this.getSettings();
+    const supaUrl = (settings?.supabaseUrl || '').trim();
+    const supaKey = (settings?.supabaseAnonKey || '').trim();
+
+    // Only auto-sync if Supabase credentials are configured and autoCloudSync is not disabled
+    if (!supaUrl || !supaKey || settings?.autoCloudSync === false || !this.currentUser) {
+      this.dispatchSyncEvent('offline', 'Local Mode');
+      return;
+    }
+
+    if (this.autoSyncTimer) {
+      clearTimeout(this.autoSyncTimer);
+    }
+
+    this.dispatchSyncEvent('pending', 'Changes pending auto-sync...');
+
+    this.autoSyncTimer = setTimeout(async () => {
+      await this.performAutoCloudUpload();
+    }, delayMs);
+  }
+
+  async performAutoCloudUpload() {
+    if (this.isSyncing || !this.currentUser) return;
+    const client = this.getSupabaseClient();
+    if (!client) return;
+
+    this.isSyncing = true;
+    this.dispatchSyncEvent('syncing', 'Auto-uploading to Cloud...');
+
+    try {
+      await this.syncToSupabaseCloud();
+      this.lastSyncTime = new Date();
+      this.lastSyncStatus = 'synced';
+      this.dispatchSyncEvent('synced', `Cloud Synced at ${this.lastSyncTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`);
+    } catch (err) {
+      console.warn('Auto cloud sync failed:', err.message);
+      this.lastSyncStatus = 'error';
+      this.dispatchSyncEvent('error', `Cloud sync paused: ${err.message}`);
+    } finally {
+      this.isSyncing = false;
+    }
+  }
+
+  dispatchSyncEvent(status, message) {
+    try {
+      window.dispatchEvent(new CustomEvent('omniattend:sync-status', {
+        detail: { status, message, timestamp: this.lastSyncTime }
+      }));
+    } catch (e) {}
   }
 
   // Settings

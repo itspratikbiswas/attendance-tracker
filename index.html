@@ -289,6 +289,13 @@
               <span>Ingest Routine</span>
             </button>
 
+            <!-- Cloud Auto-Sync Indicator Badge -->
+            <div id="cloud-sync-badge" onclick="app.openSettingsModal()" title="Auto-upload active. Click to view Cloud Settings."
+              class="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-850 border border-slate-800 text-[11px] text-slate-300 cursor-pointer transition">
+              <span id="cloud-sync-badge-dot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+              <span id="cloud-sync-badge-text" class="text-[11px] font-medium text-slate-300">Local Mode</span>
+            </div>
+
             <!-- Settings Button -->
             <button onclick="app.openSettingsModal()" title="Settings & API Key"
               class="p-2 text-slate-400 hover:text-white bg-slate-900/80 hover:bg-slate-800 rounded-xl border border-slate-800 transition">
@@ -908,6 +915,21 @@
 
           <!-- Supabase Connection Status Box -->
           <div id="supabase-test-status" class="mt-2 hidden text-xs p-2.5 rounded-xl border"></div>
+
+          <!-- Auto-Sync Switch -->
+          <div class="flex items-center justify-between pt-2 pb-1 border-t border-slate-800/80">
+            <div class="flex items-center gap-2">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-indigo-400"></i>
+              <div>
+                <span class="text-xs font-semibold text-slate-200">Automatic Cloud Upload</span>
+                <p class="text-[10px] text-slate-400 leading-tight">Auto-saves database to Supabase after every change</p>
+              </div>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="setting-auto-cloud-sync" class="sr-only peer" checked onchange="app.toggleAutoCloudSync(this.checked)">
+              <div class="w-8 h-4 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600"></div>
+            </label>
+          </div>
 
           <div class="flex items-center gap-2 pt-1">
             <button type="button" onclick="app.pushToCloud()"

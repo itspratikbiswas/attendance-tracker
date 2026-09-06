@@ -22,7 +22,14 @@ class AttendanceApp {
 
   init() {
     this.bindEvents();
+    this.bindSyncStatusEvents();
     this.checkAuthState();
+  }
+
+  bindSyncStatusEvents() {
+    window.addEventListener('omniattend:sync-status', (e) => {
+      this.handleSyncStatus(e.detail);
+    });
   }
 
   checkAuthState() {
@@ -77,6 +84,12 @@ class AttendanceApp {
     if (supaUrlInput) supaUrlInput.value = settings.supabaseUrl || '';
     const supaKeyInput = document.getElementById('setting-supabase-key');
     if (supaKeyInput) supaKeyInput.value = settings.supabaseAnonKey || '';
+
+    // Auto sync toggle
+    const autoSyncInput = document.getElementById('setting-auto-cloud-sync');
+    if (autoSyncInput) autoSyncInput.checked = settings.autoCloudSync !== false;
+
+    this.updateCloudSyncBadge();
   }
 
   renderUserProfile() {
@@ -1069,15 +1082,79 @@ class AttendanceApp {
     const apiKey = document.getElementById('setting-gemini-api-key').value.trim();
     const supaUrl = document.getElementById('setting-supabase-url').value.trim();
     const supaKey = document.getElementById('setting-supabase-key').value.trim();
+    const autoSync = document.getElementById('setting-auto-cloud-sync')?.checked ?? true;
 
     this.storage.updateSettings({
       geminiApiKey: apiKey,
       supabaseUrl: supaUrl,
-      supabaseAnonKey: supaKey
+      supabaseAnonKey: supaKey,
+      autoCloudSync: autoSync
     });
 
+    this.updateCloudSyncBadge();
     this.closeSettingsModal();
     this.showToast('Settings & Cloud config saved!', 'success');
+  }
+
+  toggleAutoCloudSync(enabled) {
+    this.storage.updateSettings({ autoCloudSync: enabled });
+    this.updateCloudSyncBadge();
+    if (enabled) {
+      this.showToast('Automatic Cloud Upload enabled!', 'success');
+      this.storage.triggerDebouncedAutoSync(300);
+    } else {
+      this.showToast('Auto Cloud Upload paused (local storage active)', 'info');
+      this.handleSyncStatus({ status: 'offline', message: 'Local Mode (Auto-sync paused)' });
+    }
+  }
+
+  handleSyncStatus(detail) {
+    const dot = document.getElementById('cloud-sync-badge-dot');
+    const text = document.getElementById('cloud-sync-badge-text');
+    const badge = document.getElementById('cloud-sync-badge');
+    if (!badge || !dot || !text) return;
+
+    const { status, message } = detail || {};
+
+    if (status === 'syncing' || status === 'pending') {
+      badge.classList.remove('hidden');
+      dot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-ping';
+      text.textContent = 'Syncing...';
+      badge.title = message || 'Auto-uploading changes to cloud...';
+    } else if (status === 'synced') {
+      badge.classList.remove('hidden');
+      dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+      text.textContent = 'Cloud Synced';
+      badge.title = message || 'All changes backed up to Cloud';
+    } else if (status === 'error') {
+      badge.classList.remove('hidden');
+      dot.className = 'w-2 h-2 rounded-full bg-rose-400';
+      text.textContent = 'Sync Paused';
+      badge.title = message || 'Cloud auto-sync encountered an issue. Click to inspect.';
+    } else {
+      // offline / not configured
+      const settings = this.storage.getSettings();
+      if (settings?.supabaseUrl && settings?.supabaseAnonKey) {
+        badge.classList.remove('hidden');
+        dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+        text.textContent = 'Cloud Active';
+        badge.title = 'Supabase Cloud Configured';
+      } else {
+        dot.className = 'w-2 h-2 rounded-full bg-slate-500';
+        text.textContent = 'Local Mode';
+        badge.title = 'Operating in Offline/Local Mode. Configure Cloud in Settings for auto-backup.';
+      }
+    }
+  }
+
+  updateCloudSyncBadge() {
+    const settings = this.storage.getSettings();
+    const hasConfig = (settings?.supabaseUrl || '').trim() && (settings?.supabaseAnonKey || '').trim();
+    if (hasConfig && settings?.autoCloudSync !== false) {
+      this.handleSyncStatus({ status: 'synced', message: 'Connected & Auto-Sync Active' });
+    } else {
+      this.handleSyncStatus({ status: 'offline', message: 'Local Mode' });
+    }
   }
 
      // =========================================================================
