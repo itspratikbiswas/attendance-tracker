@@ -20,6 +20,11 @@ jobs:
             exit 1
           fi
           echo "Pinging Supabase at $SUPABASE_URL..."
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "apikey: $SUPABASE_ANON_KEY" -H "Authorization: Bearer $SUPABASE_ANON_KEY" "$SUPABASE_URL/rest/v1/")
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "apikey: $SUPABASE_ANON_KEY" -H "Authorization: Bearer $SUPABASE_ANON_KEY" "$SUPABASE_URL/rest/v1/omniattend_user_sync?limit=1")
           echo "Supabase responded with HTTP $STATUS"
+          if [ "$STATUS" -eq 200 ]; then
+            echo "Success: Supabase database is active and awake!"
+          else
+            echo "Warning: Received HTTP $STATUS"
+          fi
 
